@@ -265,34 +265,37 @@ with tab_planner:
         with st.form("meal_plan_form"):
             st.subheader("Assign Meals")
             
-            cols = st.columns(3)
             updated_plan_rows = []
 
-            for i, day in enumerate(days):
-                col = cols[i % 3]
-                with col:
-                    st.markdown(f"### {day}")
-                    for m_type in meal_types:
-                        existing_val = "None"
-                        if not df_plan.empty:
-                            match = df_plan[(df_plan["day"] == day) & (df_plan["meal_type"] == m_type)]
-                            if not match.empty:
-                                existing_val = match.iloc[0]["recipe_name"]
+            # Display days sequentially in rows of up to 3 to keep mobile & desktop in order
+            for i in range(0, len(days), 3):
+                day_chunk = days[i:i+3]
+                cols = st.columns(len(day_chunk))
+                
+                for j, day in enumerate(day_chunk):
+                    with cols[j]:
+                        st.markdown(f"### {day}")
+                        for m_type in meal_types:
+                            existing_val = "None"
+                            if not df_plan.empty:
+                                match = df_plan[(df_plan["day"] == day) & (df_plan["meal_type"] == m_type)]
+                                if not match.empty:
+                                    existing_val = match.iloc[0]["recipe_name"]
 
-                        selected_recipe = st.selectbox(
-                            f"{m_type}",
-                            options=list(recipe_options.keys()),
-                            index=list(recipe_options.keys()).index(existing_val) if existing_val in recipe_options else 0,
-                            key=f"{day}_{m_type}"
-                        )
+                            selected_recipe = st.selectbox(
+                                f"{m_type}",
+                                options=list(recipe_options.keys()),
+                                index=list(recipe_options.keys()).index(existing_val) if existing_val in recipe_options else 0,
+                                key=f"{day}_{m_type}"
+                            )
 
-                        if selected_recipe != "None":
-                            updated_plan_rows.append({
-                                "day": day,
-                                "meal_type": m_type,
-                                "recipe_id": recipe_options[selected_recipe],
-                                "recipe_name": selected_recipe
-                            })
+                            if selected_recipe != "None":
+                                updated_plan_rows.append({
+                                    "day": day,
+                                    "meal_type": m_type,
+                                    "recipe_id": recipe_options[selected_recipe],
+                                    "recipe_name": selected_recipe
+                                })
 
             save_plan = st.form_submit_button("💾 Save Meal Plan")
 
@@ -316,14 +319,12 @@ with tab_planner:
         st.write("")
         if st.button("🗑️ Clear Entire Weekly Plan"):
             try:
-                # Clear session state keys for dropdowns
                 for day in days:
                     for m_type in meal_types:
                         key = f"{day}_{m_type}"
                         if key in st.session_state:
                             del st.session_state[key]
 
-                # Clear Google Sheets data
                 empty_plan_df = pd.DataFrame(columns=["day", "meal_type", "recipe_id", "recipe_name"])
                 conn.update(worksheet="MealPlan", data=empty_plan_df)
                 st.cache_data.clear()
@@ -333,22 +334,19 @@ with tab_planner:
             except Exception as e:
                 st.error(f"Error clearing meal plan: {e}")
 
-       # --- PRINTABLE & SHAREABLE SECTION ---
+        # --- PRINTABLE & SHAREABLE SECTION ---
         st.divider()
         st.subheader("🖨️ Share & Print Weekly Plan")
 
         if df_plan.empty:
             st.caption("No meals planned yet for this week.")
         else:
-            # 1. Force strict Monday-Sunday day ordering
             df_plan_sorted = df_plan.copy()
             df_plan_sorted["day"] = pd.Categorical(df_plan_sorted["day"], categories=days, ordered=True)
             df_plan_sorted = df_plan_sorted.sort_values("day")
 
-            # 2. Pivot using sorted data
             pivot_plan = df_plan_sorted.pivot(index="day", columns="meal_type", values="recipe_name").fillna("-")
 
-            # 3. Ensure all meal type columns are present in correct order
             for m in meal_types:
                 if m not in pivot_plan.columns:
                     pivot_plan[m] = "-"
