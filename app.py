@@ -312,19 +312,27 @@ with tab_planner:
                 except Exception as e:
                     st.error(f"Error saving meal plan: {e}")
 
-        # --- CLEAR MEAL PLAN BUTTON ---
+       # --- CLEAR MEAL PLAN BUTTON ---
         st.write("")
         if st.button("🗑️ Clear Entire Weekly Plan"):
             try:
-                # Create empty DataFrame with matching headers
+                # 1. Clear session state keys for all dropdown menus
+                for day in days:
+                    for m_type in meal_types:
+                        key = f"{day}_{m_type}"
+                        if key in st.session_state:
+                            del st.session_state[key]
+
+                # 2. Clear Google Sheets data
                 empty_plan_df = pd.DataFrame(columns=["day", "meal_type", "recipe_id", "recipe_name"])
                 conn.update(worksheet="MealPlan", data=empty_plan_df)
                 st.cache_data.clear()
-                st.success("Weekly meal plan cleared!")
+                
+                st.success("Weekly meal plan and dropdowns cleared!")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error clearing meal plan: {e}")
-
+                
         # --- PRINTABLE & SHAREABLE SECTION ---
         st.divider()
         st.subheader("🖨️ Share & Print Weekly Plan")
