@@ -113,7 +113,7 @@ with tab1:
   with col_title:
     st.header("🗓️ Plan Your Meals for the Week")
   with col_btn:
-    st.write("")  # Spacing
+    st.write("")
     if st.button("🔄 Clear Weekly Schedule", use_container_width=True):
       if "weekly_schedule" in st.session_state:
         for day in DAYS:
@@ -223,21 +223,18 @@ with tab3:
   if df.empty:
     st.info("No recipes stored in your Google Sheet yet.")
   else:
-    # Filter and Search Controls
     col_search, col_filter = st.columns([2, 1])
 
     with col_search:
       search_term = st.text_input(
-          "🔍 Search recipes by name or ingredient", placeholder="Type to search..."
+          "🔍 Search recipes by name or ingredient",
+          placeholder="Type to search...",
       )
 
     with col_filter:
-      categories = ["All"] + sorted(
-          df["category"].dropna().unique().tolist()
-      )
+      categories = ["All"] + sorted(df["category"].dropna().unique().tolist())
       category_filter = st.selectbox("Filter by Category", options=categories)
 
-    # Filter logic
     filtered_df = df.copy()
 
     if category_filter != "All":
@@ -246,7 +243,10 @@ with tab3:
     if search_term:
       search_lower = search_term.lower()
       filtered_df = filtered_df[
-          filtered_df["name"].astype(str).str.lower().str.contains(search_lower)
+          filtered_df["name"]
+          .astype(str)
+          .str.lower()
+          .str.contains(search_lower)
           | filtered_df["ingredients"]
           .astype(str)
           .str.lower()
@@ -256,7 +256,6 @@ with tab3:
     st.write(f"**Showing {len(filtered_df)} of {len(df)} recipes**")
     st.markdown("---")
 
-    # Display recipes as expandable cards
     for idx, row in filtered_df.iterrows():
       with st.expander(
           f"🍲 **{row['name']}** | {row.get('category', 'Dinner')} | ⏱️"
@@ -268,3 +267,11 @@ with tab3:
         ]
         for ing in ingredients_list:
           st.write(f"- {ing}")
+
+        st.markdown("---")
+
+        if st.button(f"🗑️ Delete {row['name']}", key=f"del_{row['id']}"):
+          updated_df = df[df["id"] != row["id"]].reset_index(drop=True)
+          conn.update(worksheet="Recipes", data=updated_df)
+          st.success(f"Deleted '{row['name']}'!")
+          st.rerun()
