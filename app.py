@@ -56,22 +56,26 @@ with st.sidebar.expander("🌐 Import from Web Link", expanded=True):
                 st.sidebar.error("Please enter a URL.")
             else:
                 try:
-                    # Pass custom browser headers to bypass 403 Forbidden blocks
-                    custom_headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    import requests
+
+                    # Fetch page content with browser headers to avoid 403 blocks
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                     }
                     
-                    # Pass wild_mode=True to allow scraping from unlisted/generic recipe sites as well
-                    scraper = scrape_me(recipe_url, headers=custom_headers, wild_mode=True)
+                    response = requests.get(recipe_url.strip(), headers=headers, timeout=10)
+                    response.raise_for_status()
+
+                    # Pass HTML content into scrape_me
+                    scraper = scrape_me(recipe_url.strip(), html=response.text, wild_mode=True)
                     
                     scraped_title = scraper.title()
                     scraped_time = f"{scraper.total_time()} mins" if scraper.total_time() else "20 mins"
                     
-                    # Scrape ingredients
                     raw_ings = scraper.ingredients()
                     scraped_ingredients = ", ".join(raw_ings) if raw_ings else ""
-
-                    # Scrape instructions
                     scraped_instructions = scraper.instructions() if hasattr(scraper, "instructions") else ""
 
                     next_id = str(len(df_recipes) + 1)
