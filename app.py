@@ -149,7 +149,7 @@ with tab_recipes:
         with col1:
             search_query = st.text_input("🔍 Search card title, ingredients, or instructions:", "")
         with col2:
-            cat_filter = st.selectbox("Filter Category", ["All"] + list(df_recipes["category"].unique()))
+            cat_filter = st.selectbox("Filter Category", ["All"] + list(df_recipes["category"].dropna().unique()))
 
         filtered_df = df_recipes.copy()
 
@@ -165,80 +165,88 @@ with tab_recipes:
 
         # Display Index Cards
         for idx, row in filtered_df.iterrows():
+            card_id = str(row["id"])
+            
             with st.expander(f"📌 **{row['name']}** ({row['category']}) — ⏱️ {row['prep_time']}"):
+                view_tab, edit_tab = st.tabs(["👁️ View Card", "✏️ Edit / Delete"])
                 
-                card_col1, card_col2 = st.columns(2)
-                
-                with card_col1:
-                    st.markdown("#### 🛒 Ingredients")
-                    if pd.notna(row["ingredients"]) and str(row["ingredients"]).strip():
-                        ing_list = [i.strip() for i in str(row["ingredients"]).split(",") if i.strip()]
-                        for ing in ing_list:
-                            st.write(f"• {ing}")
-                    else:
-                        st.caption("*No ingredients listed.*")
+                # --- VIEW TAB ---
+                with view_tab:
+                    card_col1, card_col2 = st.columns(2)
+                    
+                    with card_col1:
+                        st.markdown("#### 🛒 Ingredients")
+                        if pd.notna(row["ingredients"]) and str(row["ingredients"]).strip():
+                            ing_list = [i.strip() for i in str(row["ingredients"]).split(",") if i.strip()]
+                            for ing in ing_list:
+                                st.write(f"• {ing}")
+                        else:
+                            st.caption("*No ingredients listed.*")
 
-                with card_col2:
-                    st.markdown("#### 📝 Instructions / Notes")
-                    if pd.notna(row["instructions"]) and str(row["instructions"]).strip():
-                        st.write(row["instructions"])
-                    else:
-                        st.caption("*No instructions listed.*")
+                    with card_col2:
+                        st.markdown("#### 📝 Instructions / Notes")
+                        if pd.notna(row["instructions"]) and str(row["instructions"]).strip():
+                            st.write(row["instructions"])
+                        else:
+                            st.caption("*No instructions listed.*")
 
-                st.divider()
-
-                # --- EDIT RECIPE CARD ---
-                with st.form(f"edit_form_{row['id']}"):
-                    st.markdown("##### ✏️ Edit Index Card")
-                    edit_name = st.text_input("Recipe Name", value=row["name"], key=f"name_{row['id']}")
-                    edit_category = st.selectbox(
-                        "Category", 
-                        ["Breakfast", "Lunch", "Dinner", "Snack"], 
-                        index=["Breakfast", "Lunch", "Dinner", "Snack"].index(row["category"]) if row["category"] in ["Breakfast", "Lunch", "Dinner", "Snack"] else 0,
-                        key=f"cat_{row['id']}"
-                    )
-                    edit_prep = st.text_input("Prep Time", value=str(row["prep_time"]), key=f"prep_{row['id']}")
+                # --- EDIT TAB ---
+                with edit_tab:
+                    st.markdown("##### ✏️ Update Recipe Information")
+                    edit_name = st.text_input("Recipe Name", value=row["name"], key=f"name_{card_id}")
+                    
+                    cat_options = ["Breakfast", "Lunch", "Dinner", "Snack"]
+                    current_cat_idx = cat_options.index(row["category"]) if row["category"] in cat_options else 0
+                    edit_category = st.selectbox("Category", cat_options, index=current_cat_idx, key=f"cat_{card_id}")
+                    
+                    edit_prep = st.text_input("Prep Time", value=str(row["prep_time"]), key=f"prep_{card_id}")
+                    
                     edit_ingredients = st.text_area(
                         "Ingredients (Optional, comma-separated)", 
                         value=str(row["ingredients"]) if pd.notna(row["ingredients"]) else "", 
-                        key=f"ing_{row['id']}"
+                        key=f"ing_{card_id}"
                     )
+                    
                     edit_instructions = st.text_area(
                         "Instructions / Notes (Optional)", 
                         value=str(row["instructions"]) if pd.notna(row["instructions"]) else "", 
-                        key=f"inst_{row['id']}"
+                        key=f"inst_{card_id}"
                     )
                     
-                    btn_col1, btn_col2 = st.columns([1, 4])
-                    with btn_col1:
-                        save_edits = st.form_submit_button("💾 Save Edits")
+                    col_save, col_del = st.columns([1, 1])
+                    
+                    with col_save:
+                        if st.button("💾 Save Changes", key=f"save_btn_{card_id}"):
+                            try:
+                                # Find index in full df and update directly
+                                row_idx = df_recipes[df_recipes["id"].astype(str) == card_id].index
+                                if not row_idx.empty:
+                                    target_i = row_idx[0]
+                                    df_recipes.at[target_i, "name"] = edit_name.strip()
+                                    df_recipes.at[target_i, "category"] = edit_category
+                                    df_recipes.at[target_i, "prep_time"] = edit_prep.strip()
+                                    df_recipes.at[target_i, "ingredients"] = edit_ingredients.strip()
+                                    df_recipes.at[target_i, "instructions"] = edit_instructions.strip()
 
-                    if save_edits:
-                        try:
-                            df_recipes.loc[df_recipes["id"] == row["id"], "name"] = edit_name.strip()
-                            df_recipes.loc[df_recipes["id"] == row["id"], "category"] = edit_category
-                            df_recipes.loc[df_recipes["id"] == row["id"], "prep_time"] = edit_prep.strip()
-                            df_recipes.loc[df_recipes["id"] == row["id"], "ingredients"] = edit_ingredients.strip()
-                            df_recipes.loc[df_recipes["id"] == row["id"], "instructions"] = edit_instructions.strip()
+                                    conn.update(worksheet="Recipes", data=df_recipes)
+                                    st.cache_data.clear()
+                                    st.success(f"Updated '{edit_name}'!")
+                                    st.rerun()
+                                else:
+                                    st.error("Could not locate recipe in sheet.")
+                            except Exception as e:
+                                st.error(f"Error updating recipe: {e}")
 
-                            conn.update(worksheet="Recipes", data=df_recipes)
-                            st.cache_data.clear()
-                            st.success(f"Updated '{edit_name}'!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error updating recipe card: {e}")
-
-                # --- DELETE BUTTON ---
-                if st.button(f"🗑️ Delete Card", key=f"del_{row['id']}"):
-                    try:
-                        updated_df = df_recipes[df_recipes["id"] != row["id"]]
-                        conn.update(worksheet="Recipes", data=updated_df)
-                        st.cache_data.clear()
-                        st.success(f"Deleted '{row['name']}'!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error deleting card: {e}")
-
+                    with col_del:
+                        if st.button("🗑️ Delete Card", key=f"del_btn_{card_id}"):
+                            try:
+                                updated_df = df_recipes[df_recipes["id"].astype(str) != card_id]
+                                conn.update(worksheet="Recipes", data=updated_df)
+                                st.cache_data.clear()
+                                st.success(f"Deleted '{row['name']}'!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error deleting card: {e}")
 
 # --- TAB 2: WEEKLY MEAL PLANNER ---
 with tab_planner:
