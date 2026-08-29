@@ -333,18 +333,22 @@ with tab_planner:
             except Exception as e:
                 st.error(f"Error clearing meal plan: {e}")
 
-        # --- PRINTABLE & SHAREABLE SECTION ---
+       # --- PRINTABLE & SHAREABLE SECTION ---
         st.divider()
         st.subheader("🖨️ Share & Print Weekly Plan")
 
         if df_plan.empty:
             st.caption("No meals planned yet for this week.")
         else:
-            pivot_plan = df_plan.pivot(index="day", columns="meal_type", values="recipe_name").fillna("-")
-            
-            ordered_days = [d for d in days if d in pivot_plan.index]
-            pivot_plan = pivot_plan.reindex(ordered_days)
+            # 1. Force strict Monday-Sunday day ordering
+            df_plan_sorted = df_plan.copy()
+            df_plan_sorted["day"] = pd.Categorical(df_plan_sorted["day"], categories=days, ordered=True)
+            df_plan_sorted = df_plan_sorted.sort_values("day")
 
+            # 2. Pivot using sorted data
+            pivot_plan = df_plan_sorted.pivot(index="day", columns="meal_type", values="recipe_name").fillna("-")
+
+            # 3. Ensure all meal type columns are present in correct order
             for m in meal_types:
                 if m not in pivot_plan.columns:
                     pivot_plan[m] = "-"
