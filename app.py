@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
+from recipe_scrapers import scrape_me
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Recipe Book & Meal Planner", layout="wide", page_icon="🍳")
@@ -36,50 +37,85 @@ if not df_plan.empty and "recipe_id" in df_plan.columns:
     df_plan["recipe_id"] = df_plan["recipe_id"].astype(str)
 
 
-# --- SIDEBAR: ADD NEW RECIPE FORM ---
-with st.sidebar.form("add_recipe_form", clear_on_submit=True):
-    st.subheader("➕ Add Recipe Manually")
-    name = st.text_input("Recipe Name")
-    category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"])
-    prep_time = st.text_input("Prep Time", "20 mins")
-    
-    # Ingredients are strictly OPTIONAL
-    ingredients_input = st.text_area(
-        "Ingredients (Optional, comma-separated)",
-        placeholder="e.g. Ground Beef, Tortillas, Salsa, Cheese"
-    )
+# --- SIDEBAR: ADD RECIPES ---
+st.sidebar.header("➕ Add New Recipe")
 
-    submitted = st.form_submit_button("Save Recipe")
+# --- OPTION A: IMPORT FROM URL ---
+with st.sidebar.expander("🌐 Import from Website URL", expanded=True):
+    with st.form("import_url_form", clear_on_submit=True):
+        recipe_url = st.text_input("Recipe Web Link", placeholder="https://www.allrecipes.com/recipe/...")
+        url_category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="url_cat")
+        submit_url = st.form_submit_button("Import & Save")
 
-    if submitted:
-        if not name.strip():
-            st.sidebar.error("Please enter a Recipe Name.")
-        else:
-            try:
-                # Assign string ID based on row count
-                next_id = str(len(df_recipes) + 1)
-                
-                # Format optional ingredients clean string
-                clean_ingredients = ingredients_input.strip() if ingredients_input else ""
+        if submit_url:
+            if not recipe_url.strip():
+                st.sidebar.error("Please enter a URL.")
+            else:
+                try:
+                    scraper = scrape_me(recipe_url)
+                    scraped_title = scraper.title()
+                    scraped_time = f"{scraper.total_time()} mins" if scraper.total_time() else "20 mins"
+                    
+                    # Extract list of ingredients and join with commas
+                    raw_ings = scraper.ingredients()
+                    scraped_ingredients = ", ".join(raw_ings) if raw_ings else ""
 
-                new_row = pd.DataFrame([{
-                    "id": next_id,
-                    "name": name.strip(),
-                    "category": category,
-                    "prep_time": prep_time.strip(),
-                    "ingredients": clean_ingredients
-                }])
+                    next_id = str(len(df_recipes) + 1)
+                    
+                    new_row = pd.DataFrame([{
+                        "id": next_id,
+                        "name": scraped_title,
+                        "category": url_category,
+                        "prep_time": scraped_time,
+                        "ingredients": scraped_ingredients
+                    }])
 
-                # Append and write to Google Sheets
-                updated_recipes = pd.concat([df_recipes, new_row], ignore_index=True)
-                conn.update(worksheet="Recipes", data=updated_recipes)
-                
-                # Instantly flush cache and refresh
-                st.cache_data.clear()
-                st.sidebar.success(f"Added '{name.strip()}'!")
-                st.rerun()
-            except Exception as e:
-                st.sidebar.error(f"Error saving to Google Sheets: {e}")
+                    updated_recipes = pd.concat([df_recipes, new_row], ignore_index=True)
+                    conn.update(worksheet="Recipes", data=updated_recipes)
+                    st.cache_data.clear()
+                    st.sidebar.success(f"Imported '{scraped_title}'!")
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"Could not scrape recipe: {e}")
+
+# --- OPTION B: MANUAL ENTRY FORM ---
+with st.sidebar.expander("✏️ Add Manually", expanded=False):
+    with st.form("add_recipe_form", clear_on_submit=True):
+        name = st.text_input("Recipe Name")
+        category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="manual_cat")
+        prep_time = st.text_input("Prep Time", "20 mins")
+        
+        # Optional ingredients field
+        ingredients_input = st.text_area(
+            "Ingredients (Optional, comma-separated)",
+            placeholder="e.g. Ground Beef, Tortillas, Salsa, Cheese"
+        )
+
+        submitted = st.form_submit_button("Save Manual Recipe")
+
+        if submitted:
+            if not name.strip():
+                st.sidebar.error("Please enter a Recipe Name.")
+            else:
+                try:
+                    next_id = str(len(df_recipes) + 1)
+                    clean_ingredients = ingredients_input.strip() if ingredients_input else ""
+
+                    new_row = pd.DataFrame([{
+                        "id": next_id,
+                        "name": name.strip(),
+                        "category": category,
+                        "prep_time": prep_time.strip(),
+                        "ingredients": clean_ingredients
+                    }])
+
+                    updated_recipes = pd.concat([df_recipes, new_row], ignore_index=True)
+                    conn.update(worksheet="Recipes", data=updated_recipes)
+                    st.cache_data.clear()
+                    st.sidebar.success(f"Added '{name.strip()}'!")
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"Error saving to Google Sheets: {e}")
 
 
 # --- MAIN TABS ---
@@ -92,7 +128,7 @@ with tab_recipes:
     if df_recipes.empty:
         st.info("No recipes found in your Google Sheet yet. Add one from the sidebar!")
     else:
-        # Search / Filter Controls
+        # Search & Filter
         col1, col2 = st.columns([2, 1])
         with col1:
             search_query = st.text_input("🔍 Search recipes or ingredients:", "")
@@ -110,7 +146,7 @@ with tab_recipes:
         if cat_filter != "All":
             filtered_df = filtered_df[filtered_df["category"] == cat_filter]
 
-        # Card Display
+        # Display Expanders
         for idx, row in filtered_df.iterrows():
             with st.expander(f"**{row['name']}** ({row['category']}) - ⏱️ {row['prep_time']}"):
                 st.write("**Ingredients:**")
@@ -139,7 +175,6 @@ with tab_planner:
         with st.form("meal_plan_form"):
             st.subheader("Assign Meals")
             
-            # Form grid layout
             cols = st.columns(3)
             updated_plan_rows = []
 
@@ -148,7 +183,6 @@ with tab_planner:
                 with col:
                     st.markdown(f"### {day}")
                     for m_type in meal_types:
-                        # Find existing selection if it exists in df_plan
                         existing_val = "None"
                         if not df_plan.empty:
                             match = df_plan[(df_plan["day"] == day) & (df_plan["meal_type"] == m_type)]
@@ -190,7 +224,6 @@ with tab_groceries:
     if df_plan.empty:
         st.info("Your meal plan is currently empty. Assign recipes in the Planner tab to see your grocery list.")
     else:
-        # Merge plan with recipes to aggregate ingredients
         merged = pd.merge(df_plan, df_recipes, left_on="recipe_id", right_on="id", how="inner")
 
         all_ingredients = []
@@ -202,7 +235,6 @@ with tab_groceries:
         if not all_ingredients:
             st.write("No ingredients required for your planned meals!")
         else:
-            # Group unique ingredients with counts
             ing_counts = pd.Series(all_ingredients).value_counts()
 
             st.subheader("Items to Buy:")
