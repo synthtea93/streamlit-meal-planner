@@ -4,8 +4,8 @@ from streamlit_gsheets import GSheetsConnection
 from recipe_scrapers import scrape_me
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Recipes and Meal Planning", layout="wide", page_icon="🗂️")
-st.title("🗂️ Recipes and Meal Planning")
+st.set_page_config(page_title="Recipes & Meal Planner", layout="wide", page_icon="🗂️")
+st.title("🗂️ Recipes & Meal Planner")
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -218,7 +218,6 @@ with tab_recipes:
                     with col_save:
                         if st.button("💾 Save Changes", key=f"save_btn_{card_id}"):
                             try:
-                                # Find index in full df and update directly
                                 row_idx = df_recipes[df_recipes["id"].astype(str) == card_id].index
                                 if not row_idx.empty:
                                     target_i = row_idx[0]
@@ -248,12 +247,13 @@ with tab_recipes:
                             except Exception as e:
                                 st.error(f"Error deleting card: {e}")
 
+
 # --- TAB 2: WEEKLY MEAL PLANNER ---
 with tab_planner:
     st.header("Weekly Schedule")
     
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    meal_types = ["Lunch", "Dinner"]
+    meal_types = ["Breakfast", "Lunch", "Dinner"]
 
     if df_recipes.empty:
         st.warning("Please add some recipe cards before setting up a meal plan.")
@@ -312,18 +312,18 @@ with tab_planner:
                 except Exception as e:
                     st.error(f"Error saving meal plan: {e}")
 
-       # --- CLEAR MEAL PLAN BUTTON ---
+        # --- CLEAR MEAL PLAN BUTTON ---
         st.write("")
         if st.button("🗑️ Clear Entire Weekly Plan"):
             try:
-                # 1. Clear session state keys for all dropdown menus
+                # Clear session state keys for dropdowns
                 for day in days:
                     for m_type in meal_types:
                         key = f"{day}_{m_type}"
                         if key in st.session_state:
                             del st.session_state[key]
 
-                # 2. Clear Google Sheets data
+                # Clear Google Sheets data
                 empty_plan_df = pd.DataFrame(columns=["day", "meal_type", "recipe_id", "recipe_name"])
                 conn.update(worksheet="MealPlan", data=empty_plan_df)
                 st.cache_data.clear()
@@ -332,7 +332,7 @@ with tab_planner:
                 st.rerun()
             except Exception as e:
                 st.error(f"Error clearing meal plan: {e}")
-                
+
         # --- PRINTABLE & SHAREABLE SECTION ---
         st.divider()
         st.subheader("🖨️ Share & Print Weekly Plan")
@@ -351,7 +351,7 @@ with tab_planner:
             pivot_plan = pivot_plan[meal_types]
 
             st.markdown("#### Weekly Overview")
-            st.dataframe(pivot_plan, use_container_width=True)
+            st.dataframe(pivot_plan, width="stretch")
 
             csv_data = pivot_plan.to_csv().encode('utf-8')
             
@@ -361,6 +361,7 @@ with tab_planner:
                 file_name="weekly_meal_plan.csv",
                 mime="text/csv"
             )
+
 
 # --- TAB 3: GENERATED SHOPPING LIST ---
 with tab_groceries:
