@@ -253,7 +253,7 @@ with tab_planner:
     st.header("Weekly Schedule")
     
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    meal_types = ["Breakfast", "Lunch", "Dinner"]
+    meal_types = ["Breakfast", "Lunch", "Dinner", "Snack"]
 
     if df_recipes.empty:
         st.warning("Please add some recipe cards before setting up a meal plan.")
