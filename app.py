@@ -1,6 +1,4 @@
 import pandas as pd
-
-# Import the web scraper
 from recipe_scrapers import scrape_me
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
@@ -27,7 +25,7 @@ except Exception:
       columns=["id", "name", "category", "prep_time", "ingredients"]
   )
 
-# --- SIDEBAR: IMPORT FROM WEB LINK ---
+# --- SIDEBAR: RECIPE MANAGEMENT ---
 st.sidebar.subheader("🔗 Import Recipe from Web")
 url_input = st.sidebar.text_input(
     "Paste Recipe URL", placeholder="https://..."
@@ -59,15 +57,12 @@ if st.sidebar.button("Fetch & Save Recipe"):
         conn.update(worksheet="Recipes", data=updated_df)
         st.sidebar.success(f"Successfully imported '{title}'!")
         st.rerun()
-
     except Exception:
-      st.sidebar.error(
-          "Could not scrape that website. Please add it manually below."
-      )
+      st.sidebar.error("Could not scrape that website. Add it manually below.")
 
 st.sidebar.markdown("---")
 
-# --- SIDEBAR: MANUAL RECIPE FORM ---
+# Manual recipe entry form
 with st.sidebar.form("add_recipe_form", clear_on_submit=True):
   st.subheader("➕ Add Recipe Manually")
   name = st.text_input("Recipe Name")
@@ -96,38 +91,92 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
     st.success(f"Added '{name}'!")
     st.rerun()
 
-# --- MAIN LAYOUT: TWO COLUMNS ---
-col1, col2 = st.columns([1, 1])
+# --- MAIN APP TABS ---
+tab1, tab2 = st.tabs(["📅 Weekly Schedule", "🛒 Combined Grocery List"])
 
-with col1:
-  st.header("📖 Select Meals for the Week")
+DAYS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
+recipe_options = ["None"] + df["name"].tolist() if not df.empty else ["None"]
+
+# --- TAB 1: WEEKLY PLANNER ---
+with tab1:
+  st.header("🗓️ Plan Your Meals for the Week")
 
   if df.empty:
-    st.info("No recipes found. Add some in the sidebar to get started!")
-    selected_recipes = []
+    st.info("No recipes found in your database yet. Add some in the sidebar!")
   else:
-    recipe_names = df["name"].tolist()
-    selected_recipes = st.multiselect(
-        "Choose recipes to plan your week:",
-        options=recipe_names,
-        placeholder="Select recipes...",
-    )
+    # Initialize weekly schedule session state
+    if "weekly_schedule" not in st.session_state:
+      st.session_state.weekly_schedule = {day: "None" for day in DAYS}
 
-    if selected_recipes:
-      st.subheader("Selected Recipes Summary")
-      selected_df = df[df["name"].isin(selected_recipes)]
-      for _, row in selected_df.iterrows():
-        with st.expander(f"📌 {row['name']} ({row['category']})"):
-          st.write(f"**Prep Time:** {row['prep_time']}")
-          st.write(f"**Ingredients:** {row['ingredients']}")
+    # Dropdowns for each day of the week
+    cols = st.columns(7)
+    for idx, day in enumerate(DAYS):
+      with cols[idx]:
+        st.subheader(day)
+        selected_meal = st.selectbox(
+            f"Select for {day}",
+            options=recipe_options,
+            index=recipe_options.index(
+                st.session_state.weekly_schedule.get(day, "None")
+            )
+            if st.session_state.weekly_schedule.get(day, "None")
+            in recipe_options
+            else 0,
+            key=f"select_{day}",
+            label_visibility="collapsed",
+        )
+        st.session_state.weekly_schedule[day] = selected_meal
 
-with col2:
+    st.markdown("---")
+    st.subheader("📋 Scheduled Week Overview")
+
+    # Display recipe breakdown for assigned days
+    scheduled_days = {
+        day: meal
+        for day, meal in st.session_state.weekly_schedule.items()
+        if meal != "None"
+    }
+
+    if not scheduled_days:
+      st.info("Select meals from the day menus above to populate your weekly plan.")
+    else:
+      for day, meal in scheduled_days.items():
+        recipe_row = df[df["name"] == meal]
+        if not recipe_row.empty:
+          prep_time = recipe_row.iloc[0]["prep_time"]
+          ingredients = recipe_row.iloc[0]["ingredients"]
+          with st.expander(f"📌 {day}: {meal} ({prep_time})"):
+            st.write(f"**Ingredients:** {ingredients}")
+
+# --- TAB 2: GROCERY LIST GENERATOR ---
+with tab2:
   st.header("🛒 Combined Grocery List")
 
-  if not selected_recipes:
-    st.info("👈 Select one or more recipes on the left to build your grocery list.")
+  # Get list of unique meals scheduled across the week
+  scheduled_meals = list(
+      set([
+          meal
+          for meal in st.session_state.get(
+              "weekly_schedule", {}
+          ).values()
+          if meal != "None"
+      ])
+  )
+
+  if not scheduled_meals:
+    st.info(
+        "👈 Go to the **Weekly Schedule** tab and assign meals to your week first!"
+    )
   else:
-    selected_df = df[df["name"].isin(selected_recipes)]
+    selected_df = df[df["name"].isin(scheduled_meals)]
     raw_ingredients = []
 
     for item_string in selected_df["ingredients"].dropna():
@@ -136,10 +185,15 @@ with col2:
 
     unique_ingredients = list(dict.fromkeys(raw_ingredients))
 
-    st.write(f"**Total Items:** {len(unique_ingredients)}")
+    st.write(
+        f"**Planned Meals:** {', '.join(scheduled_meals)} | **Total Unique"
+        f" Items:** {len(unique_ingredients)}"
+    )
 
     # Fast clipboard copying block
-    formatted_text_list = "\n".join([f"- {item}" for item in unique_ingredients])
+    formatted_text_list = "\n".join(
+        [f"- {item}" for item in unique_ingredients]
+    )
     st.code(formatted_text_list, language="text")
 
     st.markdown("---")
@@ -147,7 +201,7 @@ with col2:
 
     checked_items = []
     for idx, item in enumerate(unique_ingredients):
-      is_checked = st.checkbox(item, key=f"ing_{idx}")
+      is_checked = st.checkbox(item, key=f"ing_sched_{idx}")
       if is_checked:
         checked_items.append(item)
 
