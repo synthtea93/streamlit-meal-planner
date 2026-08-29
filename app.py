@@ -4,8 +4,8 @@ from streamlit_gsheets import GSheetsConnection
 from recipe_scrapers import scrape_me
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Recipe Book & Meal Planner", layout="wide", page_icon="🍳")
-st.title("🍳 Recipe Book & Meal Planner")
+st.set_page_config(page_title="Digital Recipe Index Box", layout="wide", page_icon="🗂️")
+st.title("🗂️ Digital Recipe Index Card Box")
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -18,11 +18,15 @@ def load_recipes():
 def load_meal_plan():
     return conn.read(worksheet="MealPlan", ttl=0)
 
-# Fetch data with fallbacks for missing sheets or empty structures
+# Fetch data with fallbacks for missing sheets/columns
 try:
     df_recipes = load_recipes()
 except Exception:
-    df_recipes = pd.DataFrame(columns=["id", "name", "category", "prep_time", "ingredients"])
+    df_recipes = pd.DataFrame(columns=["id", "name", "category", "prep_time", "ingredients", "instructions"])
+
+# Ensure 'instructions' column exists even if old Google Sheet doesn't have it yet
+if "instructions" not in df_recipes.columns:
+    df_recipes["instructions"] = ""
 
 try:
     df_plan = load_meal_plan()
@@ -38,14 +42,14 @@ if not df_plan.empty and "recipe_id" in df_plan.columns:
 
 
 # --- SIDEBAR: ADD RECIPES ---
-st.sidebar.header("➕ Add New Recipe")
+st.sidebar.header("➕ Add New Index Card")
 
 # --- OPTION A: IMPORT FROM URL ---
-with st.sidebar.expander("🌐 Import from Website URL", expanded=True):
+with st.sidebar.expander("🌐 Import from Web Link", expanded=True):
     with st.form("import_url_form", clear_on_submit=True):
-        recipe_url = st.text_input("Recipe Web Link", placeholder="https://www.allrecipes.com/recipe/...")
+        recipe_url = st.text_input("Recipe Link", placeholder="https://www.allrecipes.com/recipe/...")
         url_category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="url_cat")
-        submit_url = st.form_submit_button("Import & Save")
+        submit_url = st.form_submit_button("Import & Save Card")
 
         if submit_url:
             if not recipe_url.strip():
@@ -56,9 +60,12 @@ with st.sidebar.expander("🌐 Import from Website URL", expanded=True):
                     scraped_title = scraper.title()
                     scraped_time = f"{scraper.total_time()} mins" if scraper.total_time() else "20 mins"
                     
-                    # Extract list of ingredients and join with commas
+                    # Scrape ingredients
                     raw_ings = scraper.ingredients()
                     scraped_ingredients = ", ".join(raw_ings) if raw_ings else ""
+
+                    # Scrape instructions
+                    scraped_instructions = scraper.instructions() if hasattr(scraper, "instructions") else ""
 
                     next_id = str(len(df_recipes) + 1)
                     
@@ -67,7 +74,8 @@ with st.sidebar.expander("🌐 Import from Website URL", expanded=True):
                         "name": scraped_title,
                         "category": url_category,
                         "prep_time": scraped_time,
-                        "ingredients": scraped_ingredients
+                        "ingredients": scraped_ingredients,
+                        "instructions": scraped_instructions
                     }])
 
                     updated_recipes = pd.concat([df_recipes, new_row], ignore_index=True)
@@ -79,7 +87,7 @@ with st.sidebar.expander("🌐 Import from Website URL", expanded=True):
                     st.sidebar.error(f"Could not scrape recipe: {e}")
 
 # --- OPTION B: MANUAL ENTRY FORM ---
-with st.sidebar.expander("✏️ Add Manually", expanded=False):
+with st.sidebar.expander("✏️ Write Card Manually", expanded=False):
     with st.form("add_recipe_form", clear_on_submit=True):
         name = st.text_input("Recipe Name")
         category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="manual_cat")
@@ -91,7 +99,13 @@ with st.sidebar.expander("✏️ Add Manually", expanded=False):
             placeholder="e.g. Ground Beef, Tortillas, Salsa, Cheese"
         )
 
-        submitted = st.form_submit_button("Save Manual Recipe")
+        # Optional instructions field
+        instructions_input = st.text_area(
+            "Instructions / Preparation Notes (Optional)",
+            placeholder="e.g. 1. Brown beef in a skillet.\n2. Warm tortillas and assemble."
+        )
+
+        submitted = st.form_submit_button("Save Index Card")
 
         if submitted:
             if not name.strip():
@@ -100,13 +114,15 @@ with st.sidebar.expander("✏️ Add Manually", expanded=False):
                 try:
                     next_id = str(len(df_recipes) + 1)
                     clean_ingredients = ingredients_input.strip() if ingredients_input else ""
+                    clean_instructions = instructions_input.strip() if instructions_input else ""
 
                     new_row = pd.DataFrame([{
                         "id": next_id,
                         "name": name.strip(),
                         "category": category,
                         "prep_time": prep_time.strip(),
-                        "ingredients": clean_ingredients
+                        "ingredients": clean_ingredients,
+                        "instructions": clean_instructions
                     }])
 
                     updated_recipes = pd.concat([df_recipes, new_row], ignore_index=True)
@@ -119,19 +135,19 @@ with st.sidebar.expander("✏️ Add Manually", expanded=False):
 
 
 # --- MAIN TABS ---
-tab_recipes, tab_planner, tab_groceries = st.tabs(["📖 Recipe Book", "📅 Weekly Meal Planner", "🛒 Shopping List"])
+tab_recipes, tab_planner, tab_groceries = st.tabs(["🗂️ Recipe Box", "📅 Weekly Meal Planner", "🛒 Shopping List"])
 
-# --- TAB 1: RECIPE BOOK ---
+# --- TAB 1: RECIPE BOX (INDEX CARDS) ---
 with tab_recipes:
-    st.header("Recipe Collection")
+    st.header("Recipe Index Box")
     
     if df_recipes.empty:
-        st.info("No recipes found in your Google Sheet yet. Add one from the sidebar!")
+        st.info("Your recipe box is empty. Add a recipe card from the sidebar!")
     else:
         # Search & Filter
         col1, col2 = st.columns([2, 1])
         with col1:
-            search_query = st.text_input("🔍 Search recipes or ingredients:", "")
+            search_query = st.text_input("🔍 Search card title, ingredients, or instructions:", "")
         with col2:
             cat_filter = st.selectbox("Filter Category", ["All"] + list(df_recipes["category"].unique()))
 
@@ -140,19 +156,40 @@ with tab_recipes:
         if search_query:
             filtered_df = filtered_df[
                 filtered_df["name"].str.contains(search_query, case=False, na=False) |
-                filtered_df["ingredients"].str.contains(search_query, case=False, na=False)
+                filtered_df["ingredients"].str.contains(search_query, case=False, na=False) |
+                filtered_df["instructions"].str.contains(search_query, case=False, na=False)
             ]
 
         if cat_filter != "All":
             filtered_df = filtered_df[filtered_df["category"] == cat_filter]
 
-        # Display Expanders with Edit/Delete capabilities
+        # Display Index Cards
         for idx, row in filtered_df.iterrows():
-            with st.expander(f"**{row['name']}** ({row['category']}) - ⏱️ {row['prep_time']}"):
+            with st.expander(f"📌 **{row['name']}** ({row['category']}) — ⏱️ {row['prep_time']}"):
                 
-                # --- EDIT FORM ---
+                card_col1, card_col2 = st.columns(2)
+                
+                with card_col1:
+                    st.markdown("#### 🛒 Ingredients")
+                    if pd.notna(row["ingredients"]) and str(row["ingredients"]).strip():
+                        ing_list = [i.strip() for i in str(row["ingredients"]).split(",") if i.strip()]
+                        for ing in ing_list:
+                            st.write(f"• {ing}")
+                    else:
+                        st.caption("*No ingredients listed.*")
+
+                with card_col2:
+                    st.markdown("#### 📝 Instructions / Notes")
+                    if pd.notna(row["instructions"]) and str(row["instructions"]).strip():
+                        st.write(row["instructions"])
+                    else:
+                        st.caption("*No instructions listed.*")
+
+                st.divider()
+
+                # --- EDIT RECIPE CARD ---
                 with st.form(f"edit_form_{row['id']}"):
-                    st.markdown("##### ✏️ Edit Recipe")
+                    st.markdown("##### ✏️ Edit Index Card")
                     edit_name = st.text_input("Recipe Name", value=row["name"], key=f"name_{row['id']}")
                     edit_category = st.selectbox(
                         "Category", 
@@ -166,38 +203,41 @@ with tab_recipes:
                         value=str(row["ingredients"]) if pd.notna(row["ingredients"]) else "", 
                         key=f"ing_{row['id']}"
                     )
+                    edit_instructions = st.text_area(
+                        "Instructions / Notes (Optional)", 
+                        value=str(row["instructions"]) if pd.notna(row["instructions"]) else "", 
+                        key=f"inst_{row['id']}"
+                    )
                     
                     btn_col1, btn_col2 = st.columns([1, 4])
                     with btn_col1:
-                        save_edits = st.form_submit_button("💾 Save Changes")
+                        save_edits = st.form_submit_button("💾 Save Edits")
 
                     if save_edits:
                         try:
-                            # Update row in main dataframe
                             df_recipes.loc[df_recipes["id"] == row["id"], "name"] = edit_name.strip()
                             df_recipes.loc[df_recipes["id"] == row["id"], "category"] = edit_category
                             df_recipes.loc[df_recipes["id"] == row["id"], "prep_time"] = edit_prep.strip()
                             df_recipes.loc[df_recipes["id"] == row["id"], "ingredients"] = edit_ingredients.strip()
+                            df_recipes.loc[df_recipes["id"] == row["id"], "instructions"] = edit_instructions.strip()
 
-                            # Save back to Google Sheets
                             conn.update(worksheet="Recipes", data=df_recipes)
                             st.cache_data.clear()
                             st.success(f"Updated '{edit_name}'!")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error updating recipe: {e}")
+                            st.error(f"Error updating recipe card: {e}")
 
                 # --- DELETE BUTTON ---
-                if st.button(f"🗑️ Delete Recipe", key=f"del_{row['id']}"):
+                if st.button(f"🗑️ Delete Card", key=f"del_{row['id']}"):
                     try:
-                        # Remove row and update Google Sheets
                         updated_df = df_recipes[df_recipes["id"] != row["id"]]
                         conn.update(worksheet="Recipes", data=updated_df)
                         st.cache_data.clear()
                         st.success(f"Deleted '{row['name']}'!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error deleting recipe: {e}")
+                        st.error(f"Error deleting card: {e}")
 
 
 # --- TAB 2: WEEKLY MEAL PLANNER ---
@@ -208,7 +248,7 @@ with tab_planner:
     meal_types = ["Breakfast", "Lunch", "Dinner"]
 
     if df_recipes.empty:
-        st.warning("Please add some recipes to your Recipe Book before setting up a meal plan.")
+        st.warning("Please add some recipe cards before setting up a meal plan.")
     else:
         recipe_options = {"None": ""}
         for _, r in df_recipes.iterrows():
