@@ -1,338 +1,211 @@
-import pandas as pd
-from recipe_scrapers import scrape_me
 import streamlit as st
+import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(
-    page_title="Meal Planner & Grocery List", page_icon="🥗", layout="wide"
-)
+# --- PAGE CONFIGURATION ---
+st.set_page_config(page_title="Recipe Book & Meal Planner", layout="wide", page_icon="🍳")
+st.title("🍳 Recipe Book & Meal Planner")
 
-st.title("🥗 Weekly Meal Planner & Grocery List")
-
-# Establish connection to Google Sheets
+# --- INITIALIZE GOOGLE SHEETS CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-
-# Function to fetch all recipes
+# --- LOAD DATA FUNCTIONS ---
 def load_recipes():
-  return conn.read(worksheet="Recipes", ttl="0")
+    # ttl=0 forces Streamlit to bypass local cache and get fresh data
+    return conn.read(worksheet="Recipes", ttl=0)
 
+def load_meal_plan():
+    return conn.read(worksheet="MealPlan", ttl=0)
+
+# Fetch data with fallbacks for missing sheets or empty structures
+try:
+    df_recipes = load_recipes()
+except Exception:
+    df_recipes = pd.DataFrame(columns=["id", "name", "category", "prep_time", "ingredients"])
 
 try:
-  df = load_recipes()
+    df_plan = load_meal_plan()
 except Exception:
-  df = pd.DataFrame(
-      columns=["id", "name", "category", "prep_time", "ingredients"]
-  )
+    df_plan = pd.DataFrame(columns=["day", "meal_type", "recipe_id", "recipe_name"])
 
-# --- SIDEBAR: RECIPE MANAGEMENT ---
-st.sidebar.subheader("🔗 Import Recipe from Web")
-url_input = st.sidebar.text_input(
-    "Paste Recipe URL", placeholder="https://..."
-)
+# Normalize ID types for seamless joining/filtering
+if not df_recipes.empty and "id" in df_recipes.columns:
+    df_recipes["id"] = df_recipes["id"].astype(str)
 
-if st.sidebar.button("Fetch & Save Recipe"):
-  if url_input:
-    try:
-      with st.spinner("Scraping recipe details..."):
-        scraper = scrape_me(url_input)
-        title = scraper.title()
-        prep_time = (
-            f"{scraper.total_time()} mins"
-            if scraper.total_time()
-            else "20 mins"
-        )
-        ingredients_list = ", ".join(scraper.ingredients())
+if not df_plan.empty and "recipe_id" in df_plan.columns:
+    df_plan["recipe_id"] = df_plan["recipe_id"].astype(str)
 
-        new_id = len(df) + 1
-        new_data = pd.DataFrame([{
-            "id": new_id,
-            "name": title,
-            "category": "Dinner",
-            "prep_time": prep_time,
-            "ingredients": ingredients_list,
-        }])
 
-        updated_df = pd.concat([df, new_data], ignore_index=True)
-        conn.update(worksheet="Recipes", data=updated_df)
-        st.sidebar.success(f"Successfully imported '{title}'!")
-        st.rerun()
-    except Exception:
-      st.sidebar.error("Could not scrape that website. Add it manually below.")
-
-st.sidebar.markdown("---")
-
-# Manual recipe entry form
+# --- SIDEBAR: ADD NEW RECIPE FORM ---
 with st.sidebar.form("add_recipe_form", clear_on_submit=True):
-  st.subheader("➕ Add Recipe Manually")
-  name = st.text_input("Recipe Name")
-  category = st.selectbox(
-      "Category", ["Breakfast", "Lunch", "Dinner", "Snack"]
-  )
-  prep_time = st.text_input("Prep Time", "20 mins")
-  ingredients_input = st.text_area(
-      "Ingredients (comma-separated)",
-      placeholder="Ground Beef, Tortillas, Salsa, Cheese",
-  )
-
-  submitted = st.form_submit_button("Save Recipe")
-
-  if submitted and name and ingredients_input:
-    new_id = len(df) + 1
-    new_data = pd.DataFrame([{
-        "id": new_id,
-        "name": name,
-        "category": category,
-        "prep_time": prep_time,
-        "ingredients": ingredients_input,
-    }])
-    updated_df = pd.concat([df, new_data], ignore_index=True)
-    conn.update(worksheet="Recipes", data=updated_df)
-    st.success(f"Added '{name}'!")
-    st.rerun()
-
-# --- MAIN APP TABS ---
-tab1, tab2, tab3 = st.tabs(
-    ["📅 Weekly Schedule", "🛒 Combined Grocery List", "📚 Recipe Book"]
-)
-
-DAYS = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-]
-recipe_options = ["None"] + df["name"].tolist() if not df.empty else ["None"]
-
-# --- TAB 1: WEEKLY PLANNER ---
-with tab1:
-  col_title, col_btn = st.columns([3, 1])
-  with col_title:
-    st.header("🗓️ Plan Your Meals for the Week")
-  with col_btn:
-    st.write("")
-    if st.button("🔄 Clear Weekly Schedule", use_container_width=True):
-      if "weekly_schedule" in st.session_state:
-        for day in DAYS:
-          st.session_state.weekly_schedule[day] = "None"
-      st.rerun()
-
-  if df.empty:
-    st.info("No recipes found in your database yet. Add some in the sidebar!")
-  else:
-    if "weekly_schedule" not in st.session_state:
-      st.session_state.weekly_schedule = {day: "None" for day in DAYS}
-
-    cols = st.columns(7)
-    for idx, day in enumerate(DAYS):
-      with cols[idx]:
-        st.subheader(day)
-        selected_meal = st.selectbox(
-            f"Select for {day}",
-            options=recipe_options,
-            index=recipe_options.index(
-                st.session_state.weekly_schedule.get(day, "None")
-            )
-            if st.session_state.weekly_schedule.get(day, "None")
-            in recipe_options
-            else 0,
-            key=f"select_{day}",
-            label_visibility="collapsed",
-        )
-        st.session_state.weekly_schedule[day] = selected_meal
-
-    st.markdown("---")
-    st.subheader("📋 Scheduled Week Overview")
-
-    scheduled_days = {
-        day: meal
-        for day, meal in st.session_state.weekly_schedule.items()
-        if meal != "None"
-    }
-
-    if not scheduled_days:
-      st.info("Select meals from the day menus above to populate your weekly plan.")
-    else:
-      for day, meal in scheduled_days.items():
-        recipe_row = df[df["name"] == meal]
-        if not recipe_row.empty:
-          prep_time = recipe_row.iloc[0]["prep_time"]
-          ingredients = recipe_row.iloc[0]["ingredients"]
-          with st.expander(f"📌 {day}: {meal} ({prep_time})"):
-            st.write(f"**Ingredients:** {ingredients}")
-
-# --- TAB 2: GROCERY LIST GENERATOR ---
-with tab2:
-  st.header("🛒 Combined Grocery List")
-
-  scheduled_meals = list(
-      set([
-          meal
-          for meal in st.session_state.get(
-              "weekly_schedule", {}
-          ).values()
-          if meal != "None"
-      ])
-  )
-
-  if not scheduled_meals:
-    st.info(
-        "👈 Go to the **Weekly Schedule** tab and assign meals to your week first!"
-    )
-  else:
-    selected_df = df[df["name"].isin(scheduled_meals)]
-    raw_ingredients = []
-
-    for item_string in selected_df["ingredients"].dropna():
-      items = [i.strip() for i in str(item_string).split(",") if i.strip()]
-      raw_ingredients.extend(items)
-
-    unique_ingredients = list(dict.fromkeys(raw_ingredients))
-
-    st.write(
-        f"**Planned Meals:** {', '.join(scheduled_meals)} | **Total Unique"
-        f" Items:** {len(unique_ingredients)}"
+    st.subheader("➕ Add Recipe Manually")
+    name = st.text_input("Recipe Name")
+    category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"])
+    prep_time = st.text_input("Prep Time", "20 mins")
+    
+    # Ingredients are strictly OPTIONAL
+    ingredients_input = st.text_area(
+        "Ingredients (Optional, comma-separated)",
+        placeholder="e.g. Ground Beef, Tortillas, Salsa, Cheese"
     )
 
-    formatted_text_list = "\n".join(
-        [f"- {item}" for item in unique_ingredients]
-    )
-    st.code(formatted_text_list, language="text")
+    submitted = st.form_submit_button("Save Recipe")
 
-    st.markdown("---")
-    st.subheader("Interactive Checklist")
-
-    checked_items = []
-    for idx, item in enumerate(unique_ingredients):
-      is_checked = st.checkbox(item, key=f"ing_sched_{idx}")
-      if is_checked:
-        checked_items.append(item)
-
-    if checked_items:
-      st.caption(
-          f"Completed {len(checked_items)} of {len(unique_ingredients)} items!"
-      )
-
-# --- TAB 3: RECIPE BOOK ---
-with tab3:
-  st.header("📚 Recipe Book")
-
-  if df.empty:
-    st.info("No recipes stored in your Google Sheet yet.")
-  else:
-    col_search, col_filter = st.columns([2, 1])
-
-    with col_search:
-      search_term = st.text_input(
-          "🔍 Search recipes by name or ingredient",
-          placeholder="Type to search...",
-      )
-
-    with col_filter:
-      categories = ["All"] + sorted(df["category"].dropna().unique().tolist())
-      category_filter = st.selectbox("Filter by Category", options=categories)
-
-    filtered_df = df.copy()
-
-    if category_filter != "All":
-      filtered_df = filtered_df[filtered_df["category"] == category_filter]
-
-    if search_term:
-      search_lower = search_term.lower()
-      filtered_df = filtered_df[
-          filtered_df["name"]
-          .astype(str)
-          .str.lower()
-          .str.contains(search_lower)
-          | filtered_df["ingredients"]
-          .astype(str)
-          .str.lower()
-          .str.contains(search_lower)
-      ]
-
-    st.write(f"**Showing {len(filtered_df)} of {len(df)} recipes**")
-    st.markdown("---")
-
-    # Track editing state across reruns
-    if "editing_id" not in st.session_state:
-      st.session_state.editing_id = None
-
-    for idx, row in filtered_df.iterrows():
-      rec_id = row["id"]
-      with st.expander(
-          f"🍲 **{row['name']}** | {row.get('category', 'Dinner')} | ⏱️"
-          f" {row.get('prep_time', '20 mins')}"
-      ):
-        # Display normal view if not currently editing this recipe
-        if st.session_state.editing_id != rec_id:
-          st.write("**Ingredients:**")
-          ingredients_list = [
-              i.strip()
-              for i in str(row["ingredients"]).split(",")
-              if i.strip()
-          ]
-          for ing in ingredients_list:
-            st.write(f"- {ing}")
-
-          st.markdown("---")
-
-          btn_col1, btn_col2 = st.columns([1, 1])
-          with btn_col1:
-            if st.button("✏️ Edit Recipe", key=f"edit_btn_{rec_id}"):
-              st.session_state.editing_id = rec_id
-              st.rerun()
-
-          with btn_col2:
-            if st.button("🗑️ Delete Recipe", key=f"del_{rec_id}"):
-              updated_df = df[df["id"] != rec_id].reset_index(drop=True)
-              conn.update(worksheet="Recipes", data=updated_df)
-              st.success(f"Deleted '{row['name']}'!")
-              st.rerun()
-
-        # Display editable form if editing this recipe
+    if submitted:
+        if not name.strip():
+            st.sidebar.error("Please enter a Recipe Name.")
         else:
-          st.subheader("Edit Recipe Details")
-          with st.form(key=f"edit_form_{rec_id}"):
-            edit_name = st.text_input("Recipe Name", value=row["name"])
-            category_options = ["Breakfast", "Lunch", "Dinner", "Snack"]
-            current_cat = row.get("category", "Dinner")
-            cat_idx = (
-                category_options.index(current_cat)
-                if current_cat in category_options
-                else 2
-            )
-            edit_category = st.selectbox(
-                "Category", options=category_options, index=cat_idx
-            )
-            edit_prep_time = st.text_input(
-                "Prep Time", value=row.get("prep_time", "20 mins")
-            )
-            edit_ingredients = st.text_area(
-                "Ingredients (comma-separated)", value=row["ingredients"]
-            )
+            try:
+                # Assign string ID based on row count
+                next_id = str(len(df_recipes) + 1)
+                
+                # Format optional ingredients clean string
+                clean_ingredients = ingredients_input.strip() if ingredients_input else ""
 
-            save_col, cancel_col = st.columns([1, 1])
-            with save_col:
-              save_submitted = st.form_submit_button("💾 Save Changes")
-            with cancel_col:
-              cancel_submitted = st.form_submit_button("❌ Cancel")
+                new_row = pd.DataFrame([{
+                    "id": next_id,
+                    "name": name.strip(),
+                    "category": category,
+                    "prep_time": prep_time.strip(),
+                    "ingredients": clean_ingredients
+                }])
 
-            if save_submitted:
-              # Update dataframe row by ID
-              df.loc[df["id"] == rec_id, "name"] = edit_name
-              df.loc[df["id"] == rec_id, "category"] = edit_category
-              df.loc[df["id"] == rec_id, "prep_time"] = edit_prep_time
-              df.loc[df["id"] == rec_id, "ingredients"] = edit_ingredients
+                # Append and write to Google Sheets
+                updated_recipes = pd.concat([df_recipes, new_row], ignore_index=True)
+                conn.update(worksheet="Recipes", data=updated_recipes)
+                
+                # Instantly flush cache and refresh
+                st.cache_data.clear()
+                st.sidebar.success(f"Added '{name.strip()}'!")
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"Error saving to Google Sheets: {e}")
 
-              # Sync back to Google Sheet
-              conn.update(worksheet="Recipes", data=df)
-              st.session_state.editing_id = None
-              st.success("Recipe updated successfully!")
-              st.rerun()
 
-            if cancel_submitted:
-              st.session_state.editing_id = None
-              st.rerun()
+# --- MAIN TABS ---
+tab_recipes, tab_planner, tab_groceries = st.tabs(["📖 Recipe Book", "📅 Weekly Meal Planner", "🛒 Shopping List"])
+
+# --- TAB 1: RECIPE BOOK ---
+with tab_recipes:
+    st.header("Recipe Collection")
+    
+    if df_recipes.empty:
+        st.info("No recipes found in your Google Sheet yet. Add one from the sidebar!")
+    else:
+        # Search / Filter Controls
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            search_query = st.text_input("🔍 Search recipes or ingredients:", "")
+        with col2:
+            cat_filter = st.selectbox("Filter Category", ["All"] + list(df_recipes["category"].unique()))
+
+        filtered_df = df_recipes.copy()
+
+        if search_query:
+            filtered_df = filtered_df[
+                filtered_df["name"].str.contains(search_query, case=False, na=False) |
+                filtered_df["ingredients"].str.contains(search_query, case=False, na=False)
+            ]
+
+        if cat_filter != "All":
+            filtered_df = filtered_df[filtered_df["category"] == cat_filter]
+
+        # Card Display
+        for idx, row in filtered_df.iterrows():
+            with st.expander(f"**{row['name']}** ({row['category']}) - ⏱️ {row['prep_time']}"):
+                st.write("**Ingredients:**")
+                if row["ingredients"]:
+                    ing_list = [i.strip() for i in str(row["ingredients"]).split(",") if i.strip()]
+                    for ing in ing_list:
+                        st.write(f"- {ing}")
+                else:
+                    st.write("*No ingredients specified.*")
+
+
+# --- TAB 2: WEEKLY MEAL PLANNER ---
+with tab_planner:
+    st.header("Weekly Schedule")
+    
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    meal_types = ["Breakfast", "Lunch", "Dinner"]
+
+    if df_recipes.empty:
+        st.warning("Please add some recipes to your Recipe Book before setting up a meal plan.")
+    else:
+        recipe_options = {"None": ""}
+        for _, r in df_recipes.iterrows():
+            recipe_options[r["name"]] = r["id"]
+
+        with st.form("meal_plan_form"):
+            st.subheader("Assign Meals")
+            
+            # Form grid layout
+            cols = st.columns(3)
+            updated_plan_rows = []
+
+            for i, day in enumerate(days):
+                col = cols[i % 3]
+                with col:
+                    st.markdown(f"### {day}")
+                    for m_type in meal_types:
+                        # Find existing selection if it exists in df_plan
+                        existing_val = "None"
+                        if not df_plan.empty:
+                            match = df_plan[(df_plan["day"] == day) & (df_plan["meal_type"] == m_type)]
+                            if not match.empty:
+                                existing_val = match.iloc[0]["recipe_name"]
+
+                        selected_recipe = st.selectbox(
+                            f"{m_type}",
+                            options=list(recipe_options.keys()),
+                            index=list(recipe_options.keys()).index(existing_val) if existing_val in recipe_options else 0,
+                            key=f"{day}_{m_type}"
+                        )
+
+                        if selected_recipe != "None":
+                            updated_plan_rows.append({
+                                "day": day,
+                                "meal_type": m_type,
+                                "recipe_id": recipe_options[selected_recipe],
+                                "recipe_name": selected_recipe
+                            })
+
+            save_plan = st.form_submit_button("Save Meal Plan")
+
+            if save_plan:
+                try:
+                    new_plan_df = pd.DataFrame(updated_plan_rows)
+                    conn.update(worksheet="MealPlan", data=new_plan_df)
+                    st.cache_data.clear()
+                    st.success("Meal plan updated successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error saving meal plan: {e}")
+
+
+# --- TAB 3: GENERATED SHOPPING LIST ---
+with tab_groceries:
+    st.header("Auto-Generated Shopping List")
+
+    if df_plan.empty:
+        st.info("Your meal plan is currently empty. Assign recipes in the Planner tab to see your grocery list.")
+    else:
+        # Merge plan with recipes to aggregate ingredients
+        merged = pd.merge(df_plan, df_recipes, left_on="recipe_id", right_on="id", how="inner")
+
+        all_ingredients = []
+        for raw_ing in merged["ingredients"].dropna():
+            if raw_ing:
+                items = [i.strip().capitalize() for i in str(raw_ing).split(",") if i.strip()]
+                all_ingredients.extend(items)
+
+        if not all_ingredients:
+            st.write("No ingredients required for your planned meals!")
+        else:
+            # Group unique ingredients with counts
+            ing_counts = pd.Series(all_ingredients).value_counts()
+
+            st.subheader("Items to Buy:")
+            for ing, count in ing_counts.items():
+                qty_str = f" (x{count})" if count > 1 else ""
+                st.checkbox(f"{ing}{qty_str}", key=f"shop_{ing}")
