@@ -4,8 +4,8 @@ from streamlit_gsheets import GSheetsConnection
 from recipe_scrapers import scrape_me
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Recipes & Meal Planner", layout="wide", page_icon="🗂️")
-st.title("🗂️ Recipes & Meal Planner")
+st.set_page_config(page_title="Digital Recipe Index Box", layout="wide", page_icon="🗂️")
+st.title("🗂️ Digital Recipe Index Card Box")
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -44,7 +44,7 @@ if not df_plan.empty and "recipe_id" in df_plan.columns:
 # --- SIDEBAR: ADD RECIPES ---
 st.sidebar.header("➕ Add New Index Card")
 
-# --- OPTION A: IMPORT FROM URL ---
+# --- OPTION A: IMPORT FROM WEB LINK ---
 with st.sidebar.expander("🌐 Import from Web Link", expanded=True):
     with st.form("import_url_form", clear_on_submit=True):
         recipe_url = st.text_input("Recipe Link", placeholder="https://www.allrecipes.com/recipe/...")
@@ -56,7 +56,14 @@ with st.sidebar.expander("🌐 Import from Web Link", expanded=True):
                 st.sidebar.error("Please enter a URL.")
             else:
                 try:
-                    scraper = scrape_me(recipe_url)
+                    # Pass custom browser headers to bypass 403 Forbidden blocks
+                    custom_headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    }
+                    
+                    # Pass wild_mode=True to allow scraping from unlisted/generic recipe sites as well
+                    scraper = scrape_me(recipe_url, headers=custom_headers, wild_mode=True)
+                    
                     scraped_title = scraper.title()
                     scraped_time = f"{scraper.total_time()} mins" if scraper.total_time() else "20 mins"
                     
@@ -93,13 +100,11 @@ with st.sidebar.expander("✏️ Write Card Manually", expanded=False):
         category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="manual_cat")
         prep_time = st.text_input("Prep Time", "20 mins")
         
-        # Optional ingredients field
         ingredients_input = st.text_area(
             "Ingredients (Optional, comma-separated)",
             placeholder="e.g. Ground Beef, Tortillas, Salsa, Cheese"
         )
 
-        # Optional instructions field
         instructions_input = st.text_area(
             "Instructions / Preparation Notes (Optional)",
             placeholder="e.g. 1. Brown beef in a skillet.\n2. Warm tortillas and assemble."
@@ -253,7 +258,7 @@ with tab_planner:
     st.header("Weekly Schedule")
     
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    meal_types = ["Breakfast", "Lunch", "Dinner", "Snack"]
+    meal_types = ["Breakfast", "Lunch", "Dinner"]
 
     if df_recipes.empty:
         st.warning("Please add some recipe cards before setting up a meal plan.")
@@ -267,10 +272,10 @@ with tab_planner:
             
             updated_plan_rows = []
 
-            # Display days sequentially in rows of 3 to keep mobile & desktop in order
+            # Display days sequentially in rows of 3 equal columns to maintain correct desktop and mobile order
             for i in range(0, len(days), 3):
                 day_chunk = days[i:i+3]
-                cols = st.columns(3)  # Always lock to 3 equal-width columns
+                cols = st.columns(3)
                 
                 for j, day in enumerate(day_chunk):
                     with cols[j]:
@@ -319,12 +324,14 @@ with tab_planner:
         st.write("")
         if st.button("🗑️ Clear Entire Weekly Plan"):
             try:
+                # Clear session state keys for dropdowns
                 for day in days:
                     for m_type in meal_types:
                         key = f"{day}_{m_type}"
                         if key in st.session_state:
                             del st.session_state[key]
 
+                # Clear Google Sheets data
                 empty_plan_df = pd.DataFrame(columns=["day", "meal_type", "recipe_id", "recipe_name"])
                 conn.update(worksheet="MealPlan", data=empty_plan_df)
                 st.cache_data.clear()
@@ -341,6 +348,7 @@ with tab_planner:
         if df_plan.empty:
             st.caption("No meals planned yet for this week.")
         else:
+            # Force strict Monday-Sunday day ordering
             df_plan_sorted = df_plan.copy()
             df_plan_sorted["day"] = pd.Categorical(df_plan_sorted["day"], categories=days, ordered=True)
             df_plan_sorted = df_plan_sorted.sort_values("day")
