@@ -267,10 +267,10 @@ with tab_planner:
             
             updated_plan_rows = []
 
-            # Display days sequentially in rows of up to 3 to keep mobile & desktop in order
+            # Display days sequentially in rows of 3 to keep mobile & desktop in order
             for i in range(0, len(days), 3):
                 day_chunk = days[i:i+3]
-                cols = st.columns(len(day_chunk))
+                cols = st.columns(3)  # Always lock to 3 equal-width columns
                 
                 for j, day in enumerate(day_chunk):
                     with cols[j]:
