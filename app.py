@@ -253,7 +253,7 @@ with tab_planner:
     st.header("Weekly Schedule")
     
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    meal_types = ["Lunch", "Supper"]
+    meal_types = ["Breakfast", "Lunch", "Dinner"]
 
     if df_recipes.empty:
         st.warning("Please add some recipe cards before setting up a meal plan.")
@@ -294,11 +294,17 @@ with tab_planner:
                                 "recipe_name": selected_recipe
                             })
 
-            save_plan = st.form_submit_button("Save Meal Plan")
+            save_plan = st.form_submit_button("💾 Save Meal Plan")
 
             if save_plan:
                 try:
-                    new_plan_df = pd.DataFrame(updated_plan_rows)
+                    if updated_plan_rows:
+                        new_plan_df = pd.DataFrame(updated_plan_rows)
+                    else:
+                        new_plan_df = pd.DataFrame(columns=["day", "meal_type", "recipe_id", "recipe_name"])
+
+                    new_plan_df = new_plan_df[["day", "meal_type", "recipe_id", "recipe_name"]]
+
                     conn.update(worksheet="MealPlan", data=new_plan_df)
                     st.cache_data.clear()
                     st.success("Meal plan updated successfully!")
@@ -326,35 +332,27 @@ with tab_planner:
         if df_plan.empty:
             st.caption("No meals planned yet for this week.")
         else:
-            # Reorganize plan into a clean Day-by-Meal grid for printing
             pivot_plan = df_plan.pivot(index="day", columns="meal_type", values="recipe_name").fillna("-")
             
-            # Reorder rows by standard days of the week
             ordered_days = [d for d in days if d in pivot_plan.index]
             pivot_plan = pivot_plan.reindex(ordered_days)
 
-            # Ensure columns exist in order
             for m in meal_types:
                 if m not in pivot_plan.columns:
                     pivot_plan[m] = "-"
             pivot_plan = pivot_plan[meal_types]
 
-            # 1. Clean visual table for browser printing
             st.markdown("#### Weekly Overview")
             st.dataframe(pivot_plan, use_container_width=True)
 
-            # 2. Export / Share options
             csv_data = pivot_plan.to_csv().encode('utf-8')
             
             st.download_button(
-                label="📥 Download Plan as CSV (for Excel / Printing)",
+                label="📥 Download Plan as CSV",
                 data=csv_data,
                 file_name="weekly_meal_plan.csv",
                 mime="text/csv"
             )
-
-            st.caption("💡 **Tip for Printing:** Press `Ctrl+P` (Windows) or `Cmd+P` (Mac) to print this page directly, or download the CSV to print from Excel/Google Sheets.")
-
 
 # --- TAB 3: GENERATED SHOPPING LIST ---
 with tab_groceries:
