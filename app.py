@@ -146,16 +146,58 @@ with tab_recipes:
         if cat_filter != "All":
             filtered_df = filtered_df[filtered_df["category"] == cat_filter]
 
-        # Display Expanders
+        # Display Expanders with Edit/Delete capabilities
         for idx, row in filtered_df.iterrows():
             with st.expander(f"**{row['name']}** ({row['category']}) - ⏱️ {row['prep_time']}"):
-                st.write("**Ingredients:**")
-                if row["ingredients"]:
-                    ing_list = [i.strip() for i in str(row["ingredients"]).split(",") if i.strip()]
-                    for ing in ing_list:
-                        st.write(f"- {ing}")
-                else:
-                    st.write("*No ingredients specified.*")
+                
+                # --- EDIT FORM ---
+                with st.form(f"edit_form_{row['id']}"):
+                    st.markdown("##### ✏️ Edit Recipe")
+                    edit_name = st.text_input("Recipe Name", value=row["name"], key=f"name_{row['id']}")
+                    edit_category = st.selectbox(
+                        "Category", 
+                        ["Breakfast", "Lunch", "Dinner", "Snack"], 
+                        index=["Breakfast", "Lunch", "Dinner", "Snack"].index(row["category"]) if row["category"] in ["Breakfast", "Lunch", "Dinner", "Snack"] else 0,
+                        key=f"cat_{row['id']}"
+                    )
+                    edit_prep = st.text_input("Prep Time", value=str(row["prep_time"]), key=f"prep_{row['id']}")
+                    edit_ingredients = st.text_area(
+                        "Ingredients (Optional, comma-separated)", 
+                        value=str(row["ingredients"]) if pd.notna(row["ingredients"]) else "", 
+                        key=f"ing_{row['id']}"
+                    )
+                    
+                    btn_col1, btn_col2 = st.columns([1, 4])
+                    with btn_col1:
+                        save_edits = st.form_submit_button("💾 Save Changes")
+
+                    if save_edits:
+                        try:
+                            # Update row in main dataframe
+                            df_recipes.loc[df_recipes["id"] == row["id"], "name"] = edit_name.strip()
+                            df_recipes.loc[df_recipes["id"] == row["id"], "category"] = edit_category
+                            df_recipes.loc[df_recipes["id"] == row["id"], "prep_time"] = edit_prep.strip()
+                            df_recipes.loc[df_recipes["id"] == row["id"], "ingredients"] = edit_ingredients.strip()
+
+                            # Save back to Google Sheets
+                            conn.update(worksheet="Recipes", data=df_recipes)
+                            st.cache_data.clear()
+                            st.success(f"Updated '{edit_name}'!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error updating recipe: {e}")
+
+                # --- DELETE BUTTON ---
+                if st.button(f"🗑️ Delete Recipe", key=f"del_{row['id']}"):
+                    try:
+                        # Remove row and update Google Sheets
+                        updated_df = df_recipes[df_recipes["id"] != row["id"]]
+                        conn.update(worksheet="Recipes", data=updated_df)
+                        st.cache_data.clear()
+                        st.success(f"Deleted '{row['name']}'!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error deleting recipe: {e}")
 
 
 # --- TAB 2: WEEKLY MEAL PLANNER ---
