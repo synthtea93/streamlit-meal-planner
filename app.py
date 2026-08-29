@@ -256,22 +256,83 @@ with tab3:
     st.write(f"**Showing {len(filtered_df)} of {len(df)} recipes**")
     st.markdown("---")
 
+    # Track editing state across reruns
+    if "editing_id" not in st.session_state:
+      st.session_state.editing_id = None
+
     for idx, row in filtered_df.iterrows():
+      rec_id = row["id"]
       with st.expander(
           f"🍲 **{row['name']}** | {row.get('category', 'Dinner')} | ⏱️"
           f" {row.get('prep_time', '20 mins')}"
       ):
-        st.write("**Ingredients:**")
-        ingredients_list = [
-            i.strip() for i in str(row["ingredients"]).split(",") if i.strip()
-        ]
-        for ing in ingredients_list:
-          st.write(f"- {ing}")
+        # Display normal view if not currently editing this recipe
+        if st.session_state.editing_id != rec_id:
+          st.write("**Ingredients:**")
+          ingredients_list = [
+              i.strip()
+              for i in str(row["ingredients"]).split(",")
+              if i.strip()
+          ]
+          for ing in ingredients_list:
+            st.write(f"- {ing}")
 
-        st.markdown("---")
+          st.markdown("---")
 
-        if st.button(f"🗑️ Delete {row['name']}", key=f"del_{row['id']}"):
-          updated_df = df[df["id"] != row["id"]].reset_index(drop=True)
-          conn.update(worksheet="Recipes", data=updated_df)
-          st.success(f"Deleted '{row['name']}'!")
-          st.rerun()
+          btn_col1, btn_col2 = st.columns([1, 1])
+          with btn_col1:
+            if st.button("✏️ Edit Recipe", key=f"edit_btn_{rec_id}"):
+              st.session_state.editing_id = rec_id
+              st.rerun()
+
+          with btn_col2:
+            if st.button("🗑️ Delete Recipe", key=f"del_{rec_id}"):
+              updated_df = df[df["id"] != rec_id].reset_index(drop=True)
+              conn.update(worksheet="Recipes", data=updated_df)
+              st.success(f"Deleted '{row['name']}'!")
+              st.rerun()
+
+        # Display editable form if editing this recipe
+        else:
+          st.subheader("Edit Recipe Details")
+          with st.form(key=f"edit_form_{rec_id}"):
+            edit_name = st.text_input("Recipe Name", value=row["name"])
+            category_options = ["Breakfast", "Lunch", "Dinner", "Snack"]
+            current_cat = row.get("category", "Dinner")
+            cat_idx = (
+                category_options.index(current_cat)
+                if current_cat in category_options
+                else 2
+            )
+            edit_category = st.selectbox(
+                "Category", options=category_options, index=cat_idx
+            )
+            edit_prep_time = st.text_input(
+                "Prep Time", value=row.get("prep_time", "20 mins")
+            )
+            edit_ingredients = st.text_area(
+                "Ingredients (comma-separated)", value=row["ingredients"]
+            )
+
+            save_col, cancel_col = st.columns([1, 1])
+            with save_col:
+              save_submitted = st.form_submit_button("💾 Save Changes")
+            with cancel_col:
+              cancel_submitted = st.form_submit_button("❌ Cancel")
+
+            if save_submitted:
+              # Update dataframe row by ID
+              df.loc[df["id"] == rec_id, "name"] = edit_name
+              df.loc[df["id"] == rec_id, "category"] = edit_category
+              df.loc[df["id"] == rec_id, "prep_time"] = edit_prep_time
+              df.loc[df["id"] == rec_id, "ingredients"] = edit_ingredients
+
+              # Sync back to Google Sheet
+              conn.update(worksheet="Recipes", data=df)
+              st.session_state.editing_id = None
+              st.success("Recipe updated successfully!")
+              st.rerun()
+
+            if cancel_submitted:
+              st.session_state.editing_id = None
+              st.rerun()
