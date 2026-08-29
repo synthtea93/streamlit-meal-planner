@@ -107,7 +107,17 @@ recipe_options = ["None"] + df["name"].tolist() if not df.empty else ["None"]
 
 # --- TAB 1: WEEKLY PLANNER ---
 with tab1:
-  st.header("🗓️ Plan Your Meals for the Week")
+  col_title, col_btn = st.columns([3, 1])
+  with col_title:
+    st.header("🗓️ Plan Your Meals for the Week")
+  with col_btn:
+    st.write("")  # Spacing
+    # Clear schedule button
+    if st.button("🔄 Clear Weekly Schedule", use_container_width=True):
+      if "weekly_schedule" in st.session_state:
+        for day in DAYS:
+          st.session_state.weekly_schedule[day] = "None"
+      st.rerun()
 
   if df.empty:
     st.info("No recipes found in your database yet. Add some in the sidebar!")
@@ -138,7 +148,6 @@ with tab1:
     st.markdown("---")
     st.subheader("📋 Scheduled Week Overview")
 
-    # Display recipe breakdown for assigned days
     scheduled_days = {
         day: meal
         for day, meal in st.session_state.weekly_schedule.items()
@@ -160,7 +169,6 @@ with tab1:
 with tab2:
   st.header("🛒 Combined Grocery List")
 
-  # Get list of unique meals scheduled across the week
   scheduled_meals = list(
       set([
           meal
@@ -190,7 +198,6 @@ with tab2:
         f" Items:** {len(unique_ingredients)}"
     )
 
-    # Fast clipboard copying block
     formatted_text_list = "\n".join(
         [f"- {item}" for item in unique_ingredients]
     )
