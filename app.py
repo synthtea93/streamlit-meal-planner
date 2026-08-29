@@ -92,7 +92,9 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
     st.rerun()
 
 # --- MAIN APP TABS ---
-tab1, tab2 = st.tabs(["📅 Weekly Schedule", "🛒 Combined Grocery List"])
+tab1, tab2, tab3 = st.tabs(
+    ["📅 Weekly Schedule", "🛒 Combined Grocery List", "📚 Recipe Book"]
+)
 
 DAYS = [
     "Monday",
@@ -112,7 +114,6 @@ with tab1:
     st.header("🗓️ Plan Your Meals for the Week")
   with col_btn:
     st.write("")  # Spacing
-    # Clear schedule button
     if st.button("🔄 Clear Weekly Schedule", use_container_width=True):
       if "weekly_schedule" in st.session_state:
         for day in DAYS:
@@ -122,11 +123,9 @@ with tab1:
   if df.empty:
     st.info("No recipes found in your database yet. Add some in the sidebar!")
   else:
-    # Initialize weekly schedule session state
     if "weekly_schedule" not in st.session_state:
       st.session_state.weekly_schedule = {day: "None" for day in DAYS}
 
-    # Dropdowns for each day of the week
     cols = st.columns(7)
     for idx, day in enumerate(DAYS):
       with cols[idx]:
@@ -216,3 +215,56 @@ with tab2:
       st.caption(
           f"Completed {len(checked_items)} of {len(unique_ingredients)} items!"
       )
+
+# --- TAB 3: RECIPE BOOK ---
+with tab3:
+  st.header("📚 Recipe Book")
+
+  if df.empty:
+    st.info("No recipes stored in your Google Sheet yet.")
+  else:
+    # Filter and Search Controls
+    col_search, col_filter = st.columns([2, 1])
+
+    with col_search:
+      search_term = st.text_input(
+          "🔍 Search recipes by name or ingredient", placeholder="Type to search..."
+      )
+
+    with col_filter:
+      categories = ["All"] + sorted(
+          df["category"].dropna().unique().tolist()
+      )
+      category_filter = st.selectbox("Filter by Category", options=categories)
+
+    # Filter logic
+    filtered_df = df.copy()
+
+    if category_filter != "All":
+      filtered_df = filtered_df[filtered_df["category"] == category_filter]
+
+    if search_term:
+      search_lower = search_term.lower()
+      filtered_df = filtered_df[
+          filtered_df["name"].astype(str).str.lower().str.contains(search_lower)
+          | filtered_df["ingredients"]
+          .astype(str)
+          .str.lower()
+          .str.contains(search_lower)
+      ]
+
+    st.write(f"**Showing {len(filtered_df)} of {len(df)} recipes**")
+    st.markdown("---")
+
+    # Display recipes as expandable cards
+    for idx, row in filtered_df.iterrows():
+      with st.expander(
+          f"🍲 **{row['name']}** | {row.get('category', 'Dinner')} | ⏱️"
+          f" {row.get('prep_time', '20 mins')}"
+      ):
+        st.write("**Ingredients:**")
+        ingredients_list = [
+            i.strip() for i in str(row["ingredients"]).split(",") if i.strip()
+        ]
+        for ing in ingredients_list:
+          st.write(f"- {ing}")
