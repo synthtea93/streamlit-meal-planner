@@ -253,7 +253,7 @@ with tab_planner:
     st.header("Weekly Schedule")
     
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    meal_types = ["Breakfast", "Lunch", "Dinner"]
+    meal_types = ["Lunch", "Supper"]
 
     if df_recipes.empty:
         st.warning("Please add some recipe cards before setting up a meal plan.")
@@ -305,6 +305,42 @@ with tab_planner:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error saving meal plan: {e}")
+
+        # --- PRINTABLE & SHAREABLE SECTION ---
+        st.divider()
+        st.subheader("🖨️ Share & Print Weekly Plan")
+
+        if df_plan.empty:
+            st.caption("No meals planned yet for this week.")
+        else:
+            # Reorganize plan into a clean Day-by-Meal grid for printing
+            pivot_plan = df_plan.pivot(index="day", columns="meal_type", values="recipe_name").fillna("-")
+            
+            # Reorder rows by standard days of the week
+            ordered_days = [d for d in days if d in pivot_plan.index]
+            pivot_plan = pivot_plan.reindex(ordered_days)
+
+            # Ensure columns exist in order
+            for m in meal_types:
+                if m not in pivot_plan.columns:
+                    pivot_plan[m] = "-"
+            pivot_plan = pivot_plan[meal_types]
+
+            # 1. Clean visual table for browser printing
+            st.markdown("#### Weekly Overview")
+            st.dataframe(pivot_plan, use_container_width=True)
+
+            # 2. Export / Share options
+            csv_data = pivot_plan.to_csv().encode('utf-8')
+            
+            st.download_button(
+                label="📥 Download Plan as CSV (for Excel / Printing)",
+                data=csv_data,
+                file_name="weekly_meal_plan.csv",
+                mime="text/csv"
+            )
+
+            st.caption("💡 **Tip for Printing:** Press `Ctrl+P` (Windows) or `Cmd+P` (Mac) to print this page directly, or download the CSV to print from Excel/Google Sheets.")
 
 
 # --- TAB 3: GENERATED SHOPPING LIST ---
