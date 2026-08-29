@@ -4,8 +4,8 @@ from streamlit_gsheets import GSheetsConnection
 from recipe_scrapers import scrape_me
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Digital Recipe Index Box", layout="wide", page_icon="🗂️")
-st.title("🗂️ Digital Recipe Index Card Box")
+st.set_page_config(page_title="Recipes and Meal Planning", layout="wide", page_icon="🗂️")
+st.title("🗂️ Recipes and Meal Planning")
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
