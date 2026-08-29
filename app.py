@@ -306,6 +306,19 @@ with tab_planner:
                 except Exception as e:
                     st.error(f"Error saving meal plan: {e}")
 
+        # --- CLEAR MEAL PLAN BUTTON ---
+        st.write("")
+        if st.button("🗑️ Clear Entire Weekly Plan"):
+            try:
+                # Create empty DataFrame with matching headers
+                empty_plan_df = pd.DataFrame(columns=["day", "meal_type", "recipe_id", "recipe_name"])
+                conn.update(worksheet="MealPlan", data=empty_plan_df)
+                st.cache_data.clear()
+                st.success("Weekly meal plan cleared!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error clearing meal plan: {e}")
+
         # --- PRINTABLE & SHAREABLE SECTION ---
         st.divider()
         st.subheader("🖨️ Share & Print Weekly Plan")
