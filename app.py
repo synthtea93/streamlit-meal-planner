@@ -40,10 +40,6 @@ if not df_recipes.empty and "id" in df_recipes.columns:
 if not df_plan.empty and "recipe_id" in df_plan.columns:
     df_plan["recipe_id"] = df_plan["recipe_id"].astype(str)
 
-
-# --- SIDEBAR: ADD RECIPES ---
-st.sidebar.header("➕ Add New Index Card")
-
 # --- SIDEBAR: ADD RECIPES ---
 st.sidebar.header("➕ Add New Index Card")
 
