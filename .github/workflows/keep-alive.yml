@@ -1,0 +1,15 @@
+name: Keep Guest App Awake
+
+on:
+  schedule:
+    # Runs every 3 days at 12:00 UTC
+    - cron: '0 12 */3 * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI if needed
+
+jobs:
+  ping-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        run: |
+          curl -sL "https://https://ethan-meal-planner.streamlit.app/" > /dev/null
