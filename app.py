@@ -1,45 +1,11 @@
 import streamlit as st
 import pandas as pd
-import requests
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Digital Recipe Index Box", layout="wide", page_icon="🗂️")
 st.title("🗂️ Digital Recipe Index Card Box")
-
-# --- HELPER: DIRECT IMAGE UPLOAD ---
-def upload_image_file(uploaded_file):
-    """Uploads an image file and returns a clean, direct CDN URL."""
-    try:
-        # Direct API endpoint for zero-config uploads
-        response = requests.post(
-            "https://freeimage.host/api/1/upload",
-            data={"key": "6d207e02198a847aa98d0a2a901485a5", "action": "upload", "format": "json"},
-            files={"source": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)},
-            timeout=15
-        )
-        if response.status_code == 200:
-            json_resp = response.json()
-            if "image" in json_resp and "url" in json_resp["image"]:
-                return json_resp["image"]["url"]
-    except Exception:
-        pass
-    
-    # Fallback to Catbox
-    try:
-        response = requests.post(
-            "https://catbox.moe/user/api.php",
-            data={"reqtype": "fileupload"},
-            files={"fileToUpload": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)},
-            timeout=15
-        )
-        if response.status_code == 200 and response.text.startswith("http"):
-            return response.text.strip()
-    except Exception:
-        pass
-
-    return None
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -55,11 +21,11 @@ try:
 except Exception:
     df_recipes = pd.DataFrame(columns=[
         "id", "name", "category", "prep_time", "ingredients", "instructions", 
-        "image_url", "tags", "date_added"
+        "tags", "date_added"
     ])
 
-# Ensure new columns exist for existing Google Sheets
-for col in ["instructions", "image_url", "tags", "date_added"]:
+# Ensure required columns exist for existing Google Sheets
+for col in ["instructions", "tags", "date_added"]:
     if col not in df_recipes.columns:
         df_recipes[col] = ""
 
@@ -82,10 +48,6 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
     name = st.text_input("Recipe Name", placeholder="e.g. Garlic Butter Chicken")
     category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="manual_cat")
     prep_time = st.text_input("Prep Time", "20 mins")
-    
-    # Direct File/Camera Upload + Web Link Option
-    uploaded_photo = st.file_uploader("Upload Photo (Camera or File)", type=["jpg", "jpeg", "png", "webp"])
-    image_url_input = st.text_input("...or Web Photo URL", placeholder="https://example.com/photo.jpg")
     
     tags_input = st.text_input("Tags (Comma-separated)", placeholder="e.g. Quick, High-Protein, Kid-Friendly")
     
@@ -110,17 +72,6 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
             try:
                 next_id = str(len(df_recipes) + 1)
                 today_str = datetime.now().strftime("%Y-%m-%d")
-                
-                # Handle Photo Upload or URL
-                final_image_url = ""
-                if uploaded_photo is not None:
-                    uploaded_url = upload_image_file(uploaded_photo)
-                    if uploaded_url:
-                        final_image_url = uploaded_url
-                    else:
-                        st.sidebar.warning("Photo upload failed, saving recipe without photo.")
-                elif image_url_input.strip():
-                    final_image_url = image_url_input.strip()
 
                 if ingredients_input:
                     lines = [line.strip() for line in ingredients_input.split("\n") if line.strip()]
@@ -131,17 +82,22 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
                 clean_instructions = instructions_input.strip() if instructions_input else ""
                 clean_tags = ", ".join([t.strip() for t in tags_input.split(",") if t.strip()]) if tags_input else ""
 
-                new_row = pd.DataFrame([{
+                new_row_data = {
                     "id": next_id,
                     "name": name.strip(),
                     "category": category,
                     "prep_time": prep_time.strip(),
                     "ingredients": clean_ingredients,
                     "instructions": clean_instructions,
-                    "image_url": final_image_url,
                     "tags": clean_tags,
                     "date_added": today_str
-                }])
+                }
+                
+                # Keep column compatibility if image_url exists in sheet
+                if "image_url" in df_recipes.columns:
+                    new_row_data["image_url"] = ""
+
+                new_row = pd.DataFrame([new_row_data])
 
                 updated_recipes = pd.concat([df_recipes, new_row], ignore_index=True)
                 conn.update(worksheet="Recipes", data=updated_recipes)
@@ -218,22 +174,11 @@ with tab_recipes:
             
             with st.expander(f"📌 **{row['name']}** ({row['category']}) — ⏱️ {row['prep_time']}{tag_display}"):
                 view_tab, edit_tab = st.tabs(["👁️ View Card", "✏️ Edit / Delete"])
-
+                
                 # VIEW TAB
                 with view_tab:
-                    raw_url = str(row["image_url"]).strip() if pd.notna(row["image_url"]) else ""
-                    if raw_url and raw_url.lower() != "nan":
-                        st.markdown(
-                            f'''
-                            <div style="display: flex; justify-content: center; margin-bottom: 15px;">
-                                <img src="{raw_url}" style="max-width: 100%; max-height: 400px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.15);" />
-                            </div>
-                            ''',
-                            unsafe_allow_html=True
-                        )
-
                     card_col1, card_col2 = st.columns(2)
-
+                    
                     with card_col1:
                         st.markdown("#### 🛒 Ingredients")
                         if pd.notna(row["ingredients"]) and str(row["ingredients"]).strip():
@@ -249,7 +194,7 @@ with tab_recipes:
                             st.write(row["instructions"])
                         else:
                             st.caption("*No instructions listed.*")
-
+                    
                     if pd.notna(row["date_added"]) and str(row["date_added"]).strip():
                         st.caption(f"📅 Added on: {row['date_added']}")
 
@@ -263,13 +208,6 @@ with tab_recipes:
                     edit_category = st.selectbox("Category", cat_options, index=current_cat_idx, key=f"cat_{card_id}")
                     
                     edit_prep = st.text_input("Prep Time", value=str(row["prep_time"]), key=f"prep_{card_id}")
-                    
-                    edit_uploaded_photo = st.file_uploader("Replace Photo (Upload)", type=["jpg", "jpeg", "png", "webp"], key=f"file_{card_id}")
-                    edit_image_url = st.text_input(
-                        "...or Photo Web URL", 
-                        value=str(row["image_url"]) if pd.notna(row["image_url"]) else "", 
-                        key=f"img_{card_id}"
-                    )
                     
                     edit_tags = st.text_input(
                         "Tags (Comma-separated)", 
@@ -298,14 +236,6 @@ with tab_recipes:
                                 if not row_idx.empty:
                                     target_i = row_idx[0]
                                     
-                                    # Handle Edit Photo Upload
-                                    if edit_uploaded_photo is not None:
-                                        up_url = upload_image_file(edit_uploaded_photo)
-                                        if up_url:
-                                            df_recipes.at[target_i, "image_url"] = up_url
-                                    else:
-                                        df_recipes.at[target_i, "image_url"] = edit_image_url.strip()
-
                                     df_recipes.at[target_i, "name"] = edit_name.strip()
                                     df_recipes.at[target_i, "category"] = edit_category
                                     df_recipes.at[target_i, "prep_time"] = edit_prep.strip()
