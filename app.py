@@ -46,7 +46,7 @@ st.sidebar.header("➕ Add New Index Card")
 
 with st.sidebar.form("add_recipe_form", clear_on_submit=True):
     name = st.text_input("Recipe Name", placeholder="e.g. Garlic Butter Chicken")
-    category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="manual_cat")
+    category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack", "Sides"], key="manual_cat")
     prep_time = st.text_input("Prep Time", "20 mins")
     
     tags_input = st.text_input("Tags (Comma-separated)", placeholder="e.g. Quick, High-Protein, Kid-Friendly")
@@ -269,7 +269,7 @@ with tab_planner:
     st.header("Weekly Schedule")
     
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    meal_types = ["Breakfast", "Lunch", "Dinner", "Snack"]
+    meal_types = ["Breakfast", "Lunch", "Dinner", "Snack", "Sides"]
 
     if df_recipes.empty:
         st.warning("Please add some recipe cards before setting up a meal plan.")
