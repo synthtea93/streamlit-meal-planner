@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
 # --- PAGE CONFIGURATION ---
@@ -18,10 +19,15 @@ def load_meal_plan():
 try:
     df_recipes = load_recipes()
 except Exception:
-    df_recipes = pd.DataFrame(columns=["id", "name", "category", "prep_time", "ingredients", "instructions"])
+    df_recipes = pd.DataFrame(columns=[
+        "id", "name", "category", "prep_time", "ingredients", "instructions", 
+        "image_url", "tags", "date_added"
+    ])
 
-if "instructions" not in df_recipes.columns:
-    df_recipes["instructions"] = ""
+# Ensure new columns exist for existing Google Sheets
+for col in ["instructions", "image_url", "tags", "date_added"]:
+    if col not in df_recipes.columns:
+        df_recipes[col] = ""
 
 try:
     df_plan = load_meal_plan()
@@ -35,23 +41,28 @@ if not df_plan.empty and "recipe_id" in df_plan.columns:
     df_plan["recipe_id"] = df_plan["recipe_id"].astype(str)
 
 
-# --- SIDEBAR: ADD RECIPES (MANUAL & QUICK PASTE) ---
+# --- SIDEBAR: ADD RECIPES ---
+st.sidebar.header("➕ Add New Index Card")
+
+# --- SIDEBAR: ADD RECIPES ---
 st.sidebar.header("➕ Add New Index Card")
 
 with st.sidebar.form("add_recipe_form", clear_on_submit=True):
-    name = st.text_input("Recipe Name")
+    name = st.text_input("Recipe Name", placeholder="e.g. Garlic Butter Chicken")
     category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="manual_cat")
     prep_time = st.text_input("Prep Time", "20 mins")
+    image_url = st.text_input("Photo Web URL (Optional)", placeholder="https://example.com/photo.jpg")
+    tags_input = st.text_input("Tags (Comma-separated, Optional)", placeholder="e.g. Quick, High-Protein, Kid-Friendly")
     
     ingredients_input = st.text_area(
-        "Ingredients (One per line or comma-separated)",
-        placeholder="1 lb Ground Beef\n1 pkg Tortillas\nSalsa\nCheese",
+        "Ingredients (Paste list or line-by-line)",
+        placeholder="1 lb Chicken Breast\n2 tbsp Butter\n3 cloves Garlic",
         height=120
     )
 
     instructions_input = st.text_area(
         "Instructions / Notes (Optional)",
-        placeholder="1. Brown beef in a skillet.\n2. Warm tortillas and assemble.",
+        placeholder="1. Sear chicken in butter.\n2. Add garlic and simmer.",
         height=120
     )
 
@@ -63,8 +74,8 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
         else:
             try:
                 next_id = str(len(df_recipes) + 1)
+                today_str = datetime.now().strftime("%Y-%m-%d")
                 
-                # Format multi-line pasted ingredients into clean comma-separated values
                 if ingredients_input:
                     lines = [line.strip() for line in ingredients_input.split("\n") if line.strip()]
                     clean_ingredients = ", ".join(lines)
@@ -72,6 +83,7 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
                     clean_ingredients = ""
 
                 clean_instructions = instructions_input.strip() if instructions_input else ""
+                clean_tags = ", ".join([t.strip() for t in tags_input.split(",") if t.strip()]) if tags_input else ""
 
                 new_row = pd.DataFrame([{
                     "id": next_id,
@@ -79,11 +91,19 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
                     "category": category,
                     "prep_time": prep_time.strip(),
                     "ingredients": clean_ingredients,
-                    "instructions": clean_instructions
+                    "instructions": clean_instructions,
+                    "image_url": image_url.strip(),
+                    "tags": clean_tags,
+                    "date_added": today_str
                 }])
 
                 updated_recipes = pd.concat([df_recipes, new_row], ignore_index=True)
                 conn.update(worksheet="Recipes", data=updated_recipes)
+                st.cache_data.clear()
+                st.sidebar.success(f"Added '{name.strip()}'!")
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"Error saving to Google Sheets: {e}")
                 st.cache_data.clear()
                 st.sidebar.success(f"Added '{name.strip()}'!")
                 st.rerun()
@@ -101,31 +121,74 @@ with tab_recipes:
     if df_recipes.empty:
         st.info("Your recipe box is empty. Add a recipe card from the sidebar!")
     else:
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            search_query = st.text_input("🔍 Search card title, ingredients, or instructions:", "")
-        with col2:
-            cat_filter = st.selectbox("Filter Category", ["All"] + list(df_recipes["category"].dropna().unique()))
+        # Search & Filters Controls
+        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+        with c1:
+            search_query = st.text_input("🔍 Search title, ingredients, instructions, or tags:", "")
+        with c2:
+            cat_filter = st.selectbox("Category Filter", ["All"] + list(df_recipes["category"].dropna().unique()))
+        
+        # Extract unique tags across all recipes for filtering
+        all_tags_set = set()
+        for raw_t in df_recipes["tags"].dropna():
+            if raw_t:
+                all_tags_set.update([t.strip() for t in str(raw_t).split(",") if t.strip()])
+        
+        with c3:
+            tag_filter = st.selectbox("Tag Filter", ["All"] + sorted(list(all_tags_set)))
+        with c4:
+            sort_by = st.selectbox("Sort By", ["A-Z", "Z-A", "Newest First", "Oldest First", "Quickest Prep"])
 
         filtered_df = df_recipes.copy()
 
+        # Text search
         if search_query:
             filtered_df = filtered_df[
                 filtered_df["name"].str.contains(search_query, case=False, na=False) |
                 filtered_df["ingredients"].str.contains(search_query, case=False, na=False) |
-                filtered_df["instructions"].str.contains(search_query, case=False, na=False)
+                filtered_df["instructions"].str.contains(search_query, case=False, na=False) |
+                filtered_df["tags"].str.contains(search_query, case=False, na=False)
             ]
 
+        # Category filter
         if cat_filter != "All":
             filtered_df = filtered_df[filtered_df["category"] == cat_filter]
 
+        # Tag filter
+        if tag_filter != "All":
+            filtered_df = filtered_df[filtered_df["tags"].str.contains(tag_filter, case=False, na=False)]
+
+        # Sorting logic
+        if sort_by == "A-Z":
+            filtered_df = filtered_df.sort_values(by="name", key=lambda x: x.str.lower(), ascending=True)
+        elif sort_by == "Z-A":
+            filtered_df = filtered_df.sort_values(by="name", key=lambda x: x.str.lower(), ascending=False)
+        elif sort_by == "Newest First":
+            filtered_df = filtered_df.sort_values(by="date_added", ascending=False)
+        elif sort_by == "Oldest First":
+            filtered_df = filtered_df.sort_values(by="date_added", ascending=True)
+        elif sort_by == "Quickest Prep":
+            # Extract numbers from strings like "20 mins" -> 20
+            filtered_df["prep_num"] = filtered_df["prep_time"].str.extract(r'(\d+)').astype(float).fillna(999)
+            filtered_df = filtered_df.sort_values(by="prep_num", ascending=True).drop(columns=["prep_num"])
+
+        # Display Cards
         for idx, row in filtered_df.iterrows():
             card_id = str(row["id"])
+            tag_display = f" | 🏷️ {row['tags']}" if pd.notna(row["tags"]) and str(row["tags"]).strip() else ""
             
-            with st.expander(f"📌 **{row['name']}** ({row['category']}) — ⏱️ {row['prep_time']}"):
+            with st.expander(f"📌 **{row['name']}** ({row['category']}) — ⏱️ {row['prep_time']}{tag_display}"):
                 view_tab, edit_tab = st.tabs(["👁️ View Card", "✏️ Edit / Delete"])
                 
+                # VIEW TAB
                 with view_tab:
+                    # Render photo header if image URL exists
+                    if pd.notna(row["image_url"]) and str(row["image_url"]).strip():
+                        try:
+                            st.image(row["image_url"].strip(), use_container_width=True)
+                        except Exception:
+                            st.caption("*Could not load image from link.*")
+
                     card_col1, card_col2 = st.columns(2)
                     
                     with card_col1:
@@ -143,7 +206,11 @@ with tab_recipes:
                             st.write(row["instructions"])
                         else:
                             st.caption("*No instructions listed.*")
+                    
+                    if pd.notna(row["date_added"]) and str(row["date_added"]).strip():
+                        st.caption(f"📅 Added on: {row['date_added']}")
 
+                # EDIT TAB
                 with edit_tab:
                     st.markdown("##### ✏️ Update Recipe Information")
                     edit_name = st.text_input("Recipe Name", value=row["name"], key=f"name_{card_id}")
@@ -154,6 +221,18 @@ with tab_recipes:
                     
                     edit_prep = st.text_input("Prep Time", value=str(row["prep_time"]), key=f"prep_{card_id}")
                     
+                    edit_image_url = st.text_input(
+                        "Photo Web URL", 
+                        value=str(row["image_url"]) if pd.notna(row["image_url"]) else "", 
+                        key=f"img_{card_id}"
+                    )
+                    
+                    edit_tags = st.text_input(
+                        "Tags (Comma-separated)", 
+                        value=str(row["tags"]) if pd.notna(row["tags"]) else "", 
+                        key=f"tags_{card_id}"
+                    )
+
                     edit_ingredients = st.text_area(
                         "Ingredients (Optional, comma-separated)", 
                         value=str(row["ingredients"]) if pd.notna(row["ingredients"]) else "", 
@@ -177,6 +256,8 @@ with tab_recipes:
                                     df_recipes.at[target_i, "name"] = edit_name.strip()
                                     df_recipes.at[target_i, "category"] = edit_category
                                     df_recipes.at[target_i, "prep_time"] = edit_prep.strip()
+                                    df_recipes.at[target_i, "image_url"] = edit_image_url.strip()
+                                    df_recipes.at[target_i, "tags"] = edit_tags.strip()
                                     df_recipes.at[target_i, "ingredients"] = edit_ingredients.strip()
                                     df_recipes.at[target_i, "instructions"] = edit_instructions.strip()
 
@@ -206,7 +287,7 @@ with tab_planner:
     st.header("Weekly Schedule")
     
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    meal_types = ["Breakfast", "Lunch", "Dinner"]
+    meal_types = ["Breakfast", "Lunch", "Dinner", "Snack"]
 
     if df_recipes.empty:
         st.warning("Please add some recipe cards before setting up a meal plan.")
