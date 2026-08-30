@@ -12,15 +12,22 @@ st.title("🗂️ Digital Recipe Index Card Box")
 def upload_image_file(uploaded_file):
     """Uploads a file directly from phone/computer and returns a permanent URL."""
     try:
+        # Pass file extension explicitly to keep image format intact
+        file_ext = uploaded_file.name.split(".")[-1] if "." in uploaded_file.name else "jpg"
+        file_name = f"recipe_photo.{file_ext}"
+
         response = requests.post(
             "https://catbox.moe/user/api.php",
             data={"reqtype": "fileupload"},
-            files={"fileToUpload": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+            files={"fileToUpload": (file_name, uploaded_file.getvalue(), uploaded_file.type)},
+            timeout=10
         )
-        if response.status_code == 200 and response.text.startswith("http"):
-            return response.text.strip()
-    except Exception:
-        pass
+        if response.status_code == 200:
+            url = response.text.strip()
+            if url.startswith("http"):
+                return url
+    except Exception as e:
+        st.sidebar.error(f"Upload failed: {e}")
     return None
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
