@@ -8,26 +8,37 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="Digital Recipe Index Box", layout="wide", page_icon="🗂️")
 st.title("🗂️ Digital Recipe Index Card Box")
 
-# --- HELPER: ZERO-SETUP IMAGE UPLOAD ---
+# --- HELPER: DIRECT IMAGE UPLOAD ---
 def upload_image_file(uploaded_file):
-    """Uploads a file directly from phone/computer and returns a permanent URL."""
+    """Uploads an image file and returns a clean, direct CDN URL."""
     try:
-        # Pass file extension explicitly to keep image format intact
-        file_ext = uploaded_file.name.split(".")[-1] if "." in uploaded_file.name else "jpg"
-        file_name = f"recipe_photo.{file_ext}"
-
+        # Direct API endpoint for zero-config uploads
+        response = requests.post(
+            "https://freeimage.host/api/1/upload",
+            data={"key": "6d207e02198a847aa98d0a2a901485a5", "action": "upload", "format": "json"},
+            files={"source": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)},
+            timeout=15
+        )
+        if response.status_code == 200:
+            json_resp = response.json()
+            if "image" in json_resp and "url" in json_resp["image"]:
+                return json_resp["image"]["url"]
+    except Exception:
+        pass
+    
+    # Fallback to Catbox
+    try:
         response = requests.post(
             "https://catbox.moe/user/api.php",
             data={"reqtype": "fileupload"},
-            files={"fileToUpload": (file_name, uploaded_file.getvalue(), uploaded_file.type)},
-            timeout=10
+            files={"fileToUpload": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)},
+            timeout=15
         )
-        if response.status_code == 200:
-            url = response.text.strip()
-            if url.startswith("http"):
-                return url
-    except Exception as e:
-        st.sidebar.error(f"Upload failed: {e}")
+        if response.status_code == 200 and response.text.startswith("http"):
+            return response.text.strip()
+    except Exception:
+        pass
+
     return None
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
@@ -210,16 +221,16 @@ with tab_recipes:
 
                 # VIEW TAB
                 with view_tab:
-                    if pd.notna(row["image_url"]) and str(row["image_url"]).strip():
-                        img_src = str(row["image_url"]).strip()
-                        try:
-                            st.image(img_src, use_container_width=True)
-                        except Exception:
-                            # Fallback HTML renderer for stubborn webp/format headers
-                            st.markdown(
-                                f'<img src="{img_src}" style="max-width:100%; border-radius:10px; margin-bottom:10px;" />',
-                                unsafe_allow_html=True
-                            )
+                    raw_url = str(row["image_url"]).strip() if pd.notna(row["image_url"]) else ""
+                    if raw_url and raw_url.lower() != "nan":
+                        st.markdown(
+                            f'''
+                            <div style="display: flex; justify-content: center; margin-bottom: 15px;">
+                                <img src="{raw_url}" style="max-width: 100%; max-height: 400px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.15);" />
+                            </div>
+                            ''',
+                            unsafe_allow_html=True
+                        )
 
                     card_col1, card_col2 = st.columns(2)
 
