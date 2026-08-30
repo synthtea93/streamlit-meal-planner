@@ -5,7 +5,7 @@ from streamlit_gsheets import GSheetsConnection
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Digital Recipes & Meal Planning", layout="wide", page_icon="🗂️")
-st.title("🗂️ Digital Recipe Index Card Box")
+st.title("🗂️ Digital Recipes & Meal Planning")
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
