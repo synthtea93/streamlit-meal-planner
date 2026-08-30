@@ -207,17 +207,22 @@ with tab_recipes:
             
             with st.expander(f"📌 **{row['name']}** ({row['category']}) — ⏱️ {row['prep_time']}{tag_display}"):
                 view_tab, edit_tab = st.tabs(["👁️ View Card", "✏️ Edit / Delete"])
-                
+
                 # VIEW TAB
                 with view_tab:
                     if pd.notna(row["image_url"]) and str(row["image_url"]).strip():
+                        img_src = str(row["image_url"]).strip()
                         try:
-                            st.image(row["image_url"].strip(), use_container_width=True)
+                            st.image(img_src, use_container_width=True)
                         except Exception:
-                            st.caption("*Could not load image.*")
+                            # Fallback HTML renderer for stubborn webp/format headers
+                            st.markdown(
+                                f'<img src="{img_src}" style="max-width:100%; border-radius:10px; margin-bottom:10px;" />',
+                                unsafe_allow_html=True
+                            )
 
                     card_col1, card_col2 = st.columns(2)
-                    
+
                     with card_col1:
                         st.markdown("#### 🛒 Ingredients")
                         if pd.notna(row["ingredients"]) and str(row["ingredients"]).strip():
@@ -233,7 +238,7 @@ with tab_recipes:
                             st.write(row["instructions"])
                         else:
                             st.caption("*No instructions listed.*")
-                    
+
                     if pd.notna(row["date_added"]) and str(row["date_added"]).strip():
                         st.caption(f"📅 Added on: {row['date_added']}")
 
