@@ -135,7 +135,7 @@ with tab_recipes:
         with c3:
             tag_filter = st.selectbox("Tag Filter", ["All"] + sorted(list(all_tags_set)))
         with c4:
-            sort_by = st.selectbox("Sort By", ["A-Z", "Z-A", "Newest First", "Oldest First", "Quickest Prep"])
+            sort_by = st.selectbox("Sort By", ["A-Z", "Z-A", "Newest First", "Oldest First", "Quickest Time"])
 
         filtered_df = df_recipes.copy()
 
@@ -165,7 +165,7 @@ with tab_recipes:
             filtered_df = filtered_df.sort_values(by="date_added", ascending=False)
         elif sort_by == "Oldest First":
             filtered_df = filtered_df.sort_values(by="date_added", ascending=True)
-        elif sort_by == "Quickest Prep":
+        elif sort_by == "Quickest Time":
             filtered_df["total_time_num"] = filtered_df["total_time"].str.extract(r'(\d+)').astype(float).fillna(999)
             filtered_df = filtered_df.sort_values(by="total_time_num", ascending=True).drop(columns=["total_time_num"])
 
