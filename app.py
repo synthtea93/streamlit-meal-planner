@@ -20,7 +20,7 @@ try:
     df_recipes = load_recipes()
 except Exception:
     df_recipes = pd.DataFrame(columns=[
-        "id", "name", "category", "prep_time", "ingredients", "instructions", 
+        "id", "name", "category", "total_time", "ingredients", "instructions", 
         "tags", "date_added"
     ])
 
