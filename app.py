@@ -47,7 +47,7 @@ st.sidebar.header("➕ Add New Index Card")
 with st.sidebar.form("add_recipe_form", clear_on_submit=True):
     name = st.text_input("Recipe Name", placeholder="e.g. Garlic Butter Chicken")
     category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Sides", "Snack"], key="manual_cat")
-    prep_time = st.text_input("Prep Time", "20 mins")
+    total_time = st.text_input("Total Time", "20 mins")
     
     tags_input = st.text_input("Tags (Comma-separated)", placeholder="e.g. Quick, High-Protein, Kid-Friendly")
     
@@ -86,7 +86,7 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
                     "id": next_id,
                     "name": name.strip(),
                     "category": category,
-                    "prep_time": prep_time.strip(),
+                    "total_time": total_time.strip(),
                     "ingredients": clean_ingredients,
                     "instructions": clean_instructions,
                     "tags": clean_tags,
@@ -166,15 +166,15 @@ with tab_recipes:
         elif sort_by == "Oldest First":
             filtered_df = filtered_df.sort_values(by="date_added", ascending=True)
         elif sort_by == "Quickest Prep":
-            filtered_df["prep_num"] = filtered_df["prep_time"].str.extract(r'(\d+)').astype(float).fillna(999)
-            filtered_df = filtered_df.sort_values(by="prep_num", ascending=True).drop(columns=["prep_num"])
+            filtered_df["total_time_num"] = filtered_df["total_time"].str.extract(r'(\d+)').astype(float).fillna(999)
+            filtered_df = filtered_df.sort_values(by="total_time_num", ascending=True).drop(columns=["total_time_num"])
 
         # Display Cards
         for idx, row in filtered_df.iterrows():
             card_id = str(row["id"])
             tag_display = f" | 🏷️ {row['tags']}" if pd.notna(row["tags"]) and str(row["tags"]).strip() else ""
             
-            with st.expander(f"📌 **{row['name']}** ({row['category']}) — ⏱️ {row['prep_time']}{tag_display}"):
+            with st.expander(f"📌 **{row['name']}** ({row['category']}) — ⏱️ {row['total_time']}{tag_display}"):
                 view_tab, edit_tab = st.tabs(["👁️ View Card", "✏️ Edit / Delete"])
                 
                 # VIEW TAB
@@ -209,7 +209,7 @@ with tab_recipes:
                     current_cat_idx = cat_options.index(row["category"]) if row["category"] in cat_options else 0
                     edit_category = st.selectbox("Category", cat_options, index=current_cat_idx, key=f"cat_{card_id}")
                     
-                    edit_prep = st.text_input("Prep Time", value=str(row["prep_time"]), key=f"prep_{card_id}")
+                    edit_total_time = st.text_input("Total Time", value=str(row["total_time"]), key=f"total_time_{card_id}")
                     
                     edit_tags = st.text_input(
                         "Tags (Comma-separated)", 
@@ -240,7 +240,7 @@ with tab_recipes:
                                     
                                     df_recipes.at[target_i, "name"] = edit_name.strip()
                                     df_recipes.at[target_i, "category"] = edit_category
-                                    df_recipes.at[target_i, "prep_time"] = edit_prep.strip()
+                                    df_recipes.at[target_i, "total_time"] = edit_total_time.strip()
                                     df_recipes.at[target_i, "tags"] = edit_tags.strip()
                                     df_recipes.at[target_i, "ingredients"] = edit_ingredients.strip()
                                     df_recipes.at[target_i, "instructions"] = edit_instructions.strip()
