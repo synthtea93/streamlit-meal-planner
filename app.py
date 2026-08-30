@@ -4,7 +4,7 @@ from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Digital Recipe Index Box", layout="wide", page_icon="🗂️")
+st.set_page_config(page_title="Digital Recipes & Meal Planning", layout="wide", page_icon="🗂️")
 st.title("🗂️ Digital Recipe Index Card Box")
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
