@@ -1,11 +1,27 @@
 import streamlit as st
 import pandas as pd
+import requests
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Digital Recipe Index Box", layout="wide", page_icon="🗂️")
 st.title("🗂️ Digital Recipe Index Card Box")
+
+# --- HELPER: ZERO-SETUP IMAGE UPLOAD ---
+def upload_image_file(uploaded_file):
+    """Uploads a file directly from phone/computer and returns a permanent URL."""
+    try:
+        response = requests.post(
+            "https://catbox.moe/user/api.php",
+            data={"reqtype": "fileupload"},
+            files={"fileToUpload": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+        )
+        if response.status_code == 200 and response.text.startswith("http"):
+            return response.text.strip()
+    except Exception:
+        pass
+    return None
 
 # --- INITIALIZE GOOGLE SHEETS CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -40,6 +56,7 @@ if not df_recipes.empty and "id" in df_recipes.columns:
 if not df_plan.empty and "recipe_id" in df_plan.columns:
     df_plan["recipe_id"] = df_plan["recipe_id"].astype(str)
 
+
 # --- SIDEBAR: ADD RECIPES ---
 st.sidebar.header("➕ Add New Index Card")
 
@@ -47,8 +64,12 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
     name = st.text_input("Recipe Name", placeholder="e.g. Garlic Butter Chicken")
     category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="manual_cat")
     prep_time = st.text_input("Prep Time", "20 mins")
-    image_url = st.text_input("Photo Web URL (Optional)", placeholder="https://example.com/photo.jpg")
-    tags_input = st.text_input("Tags (Comma-separated, Optional)", placeholder="e.g. Quick, High-Protein, Kid-Friendly")
+    
+    # Direct File/Camera Upload + Web Link Option
+    uploaded_photo = st.file_uploader("Upload Photo (Camera or File)", type=["jpg", "jpeg", "png", "webp"])
+    image_url_input = st.text_input("...or Web Photo URL", placeholder="https://example.com/photo.jpg")
+    
+    tags_input = st.text_input("Tags (Comma-separated)", placeholder="e.g. Quick, High-Protein, Kid-Friendly")
     
     ingredients_input = st.text_area(
         "Ingredients (Paste list or line-by-line)",
@@ -72,6 +93,17 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
                 next_id = str(len(df_recipes) + 1)
                 today_str = datetime.now().strftime("%Y-%m-%d")
                 
+                # Handle Photo Upload or URL
+                final_image_url = ""
+                if uploaded_photo is not None:
+                    uploaded_url = upload_image_file(uploaded_photo)
+                    if uploaded_url:
+                        final_image_url = uploaded_url
+                    else:
+                        st.sidebar.warning("Photo upload failed, saving recipe without photo.")
+                elif image_url_input.strip():
+                    final_image_url = image_url_input.strip()
+
                 if ingredients_input:
                     lines = [line.strip() for line in ingredients_input.split("\n") if line.strip()]
                     clean_ingredients = ", ".join(lines)
@@ -88,18 +120,13 @@ with st.sidebar.form("add_recipe_form", clear_on_submit=True):
                     "prep_time": prep_time.strip(),
                     "ingredients": clean_ingredients,
                     "instructions": clean_instructions,
-                    "image_url": image_url.strip(),
+                    "image_url": final_image_url,
                     "tags": clean_tags,
                     "date_added": today_str
                 }])
 
                 updated_recipes = pd.concat([df_recipes, new_row], ignore_index=True)
                 conn.update(worksheet="Recipes", data=updated_recipes)
-                st.cache_data.clear()
-                st.sidebar.success(f"Added '{name.strip()}'!")
-                st.rerun()
-            except Exception as e:
-                st.sidebar.error(f"Error saving to Google Sheets: {e}")
                 st.cache_data.clear()
                 st.sidebar.success(f"Added '{name.strip()}'!")
                 st.rerun()
@@ -124,7 +151,6 @@ with tab_recipes:
         with c2:
             cat_filter = st.selectbox("Category Filter", ["All"] + list(df_recipes["category"].dropna().unique()))
         
-        # Extract unique tags across all recipes for filtering
         all_tags_set = set()
         for raw_t in df_recipes["tags"].dropna():
             if raw_t:
@@ -164,7 +190,6 @@ with tab_recipes:
         elif sort_by == "Oldest First":
             filtered_df = filtered_df.sort_values(by="date_added", ascending=True)
         elif sort_by == "Quickest Prep":
-            # Extract numbers from strings like "20 mins" -> 20
             filtered_df["prep_num"] = filtered_df["prep_time"].str.extract(r'(\d+)').astype(float).fillna(999)
             filtered_df = filtered_df.sort_values(by="prep_num", ascending=True).drop(columns=["prep_num"])
 
@@ -178,12 +203,11 @@ with tab_recipes:
                 
                 # VIEW TAB
                 with view_tab:
-                    # Render photo header if image URL exists
                     if pd.notna(row["image_url"]) and str(row["image_url"]).strip():
                         try:
                             st.image(row["image_url"].strip(), use_container_width=True)
                         except Exception:
-                            st.caption("*Could not load image from link.*")
+                            st.caption("*Could not load image.*")
 
                     card_col1, card_col2 = st.columns(2)
                     
@@ -217,8 +241,9 @@ with tab_recipes:
                     
                     edit_prep = st.text_input("Prep Time", value=str(row["prep_time"]), key=f"prep_{card_id}")
                     
+                    edit_uploaded_photo = st.file_uploader("Replace Photo (Upload)", type=["jpg", "jpeg", "png", "webp"], key=f"file_{card_id}")
                     edit_image_url = st.text_input(
-                        "Photo Web URL", 
+                        "...or Photo Web URL", 
                         value=str(row["image_url"]) if pd.notna(row["image_url"]) else "", 
                         key=f"img_{card_id}"
                     )
@@ -249,10 +274,18 @@ with tab_recipes:
                                 row_idx = df_recipes[df_recipes["id"].astype(str) == card_id].index
                                 if not row_idx.empty:
                                     target_i = row_idx[0]
+                                    
+                                    # Handle Edit Photo Upload
+                                    if edit_uploaded_photo is not None:
+                                        up_url = upload_image_file(edit_uploaded_photo)
+                                        if up_url:
+                                            df_recipes.at[target_i, "image_url"] = up_url
+                                    else:
+                                        df_recipes.at[target_i, "image_url"] = edit_image_url.strip()
+
                                     df_recipes.at[target_i, "name"] = edit_name.strip()
                                     df_recipes.at[target_i, "category"] = edit_category
                                     df_recipes.at[target_i, "prep_time"] = edit_prep.strip()
-                                    df_recipes.at[target_i, "image_url"] = edit_image_url.strip()
                                     df_recipes.at[target_i, "tags"] = edit_tags.strip()
                                     df_recipes.at[target_i, "ingredients"] = edit_ingredients.strip()
                                     df_recipes.at[target_i, "instructions"] = edit_instructions.strip()
@@ -344,7 +377,6 @@ with tab_planner:
                 except Exception as e:
                     st.error(f"Error saving meal plan: {e}")
 
-        # --- CLEAR MEAL PLAN BUTTON ---
         st.write("")
         if st.button("🗑️ Clear Entire Weekly Plan"):
             try:
@@ -363,7 +395,6 @@ with tab_planner:
             except Exception as e:
                 st.error(f"Error clearing meal plan: {e}")
 
-        # --- PRINTABLE & SHAREABLE SECTION ---
         st.divider()
         st.subheader("🖨️ Share & Print Weekly Plan")
 
