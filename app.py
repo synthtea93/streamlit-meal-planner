@@ -46,7 +46,7 @@ st.sidebar.header("➕ Add New Index Card")
 
 with st.sidebar.form("add_recipe_form", clear_on_submit=True):
     name = st.text_input("Recipe Name", placeholder="e.g. Garlic Butter Chicken")
-    category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Snack"], key="manual_cat")
+    category = st.selectbox("Category", ["Breakfast", "Lunch", "Dinner", "Sides", "Snack"], key="manual_cat")
     prep_time = st.text_input("Prep Time", "20 mins")
     
     tags_input = st.text_input("Tags (Comma-separated)", placeholder="e.g. Quick, High-Protein, Kid-Friendly")
@@ -205,7 +205,7 @@ with tab_recipes:
                     st.markdown("##### ✏️ Update Recipe Information")
                     edit_name = st.text_input("Recipe Name", value=row["name"], key=f"name_{card_id}")
                     
-                    cat_options = ["Breakfast", "Lunch", "Dinner", "Snack"]
+                    cat_options = ["Breakfast", "Lunch", "Dinner", "Sides", "Snack"]
                     current_cat_idx = cat_options.index(row["category"]) if row["category"] in cat_options else 0
                     edit_category = st.selectbox("Category", cat_options, index=current_cat_idx, key=f"cat_{card_id}")
                     
